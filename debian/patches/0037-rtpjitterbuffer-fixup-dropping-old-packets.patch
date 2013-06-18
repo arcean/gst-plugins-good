@@ -1,0 +1,26 @@
+From c0bae354ed4ee219c133a91a675b90d225a6fc9f Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Sun, 21 Aug 2011 21:58:19 +0200
+Subject: [PATCH] rtpjitterbuffer: fixup dropping old packets
+
+---
+ gst/rtpmanager/gstrtpjitterbuffer.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/gst/rtpmanager/gstrtpjitterbuffer.c b/gst/rtpmanager/gstrtpjitterbuffer.c
+index 3532da7..7b36aa5 100644
+--- a/gst/rtpmanager/gstrtpjitterbuffer.c
++++ b/gst/rtpmanager/gstrtpjitterbuffer.c
+@@ -806,10 +806,10 @@ gst_jitter_buffer_sink_parse_caps (GstRtpJitterBuffer * jitterbuffer,
+     /* first expected seqnum, only update when we didn't have a previous base. */
+     if (priv->next_in_seqnum == -1)
+       priv->next_in_seqnum = val;
+-    if (priv->base_seqnum == -1)
+-      priv->base_seqnum = val;
+     if (priv->next_seqnum == -1)
+       priv->next_seqnum = val;
++    /* always accept newly expected base */
++    priv->base_seqnum = val;
+   }
+ 
+   GST_DEBUG_OBJECT (jitterbuffer, "got seqnum-base %d", priv->next_in_seqnum);

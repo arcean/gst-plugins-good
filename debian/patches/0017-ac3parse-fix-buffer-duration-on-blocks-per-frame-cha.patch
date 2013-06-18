@@ -1,0 +1,75 @@
+From 1279d9e78207785efdf68d704a03ecdbfb163996 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Stadler?= <rene.stadler@nokia.com>
+Date: Mon, 11 Jul 2011 15:23:41 +0300
+Subject: [PATCH] ac3parse: fix buffer duration on blocks-per-frame change
+
+The gst_base_parse_set_frame_rate call was predicated on a change to
+sample rate, duration or profile. However, the block count per frame can
+also change between packets, which would result in incorrect buffer
+durations.
+---
+ gst/audioparsers/gstac3parse.c |   17 ++++++++++++++---
+ gst/audioparsers/gstac3parse.h |    1 +
+ 2 files changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/gst/audioparsers/gstac3parse.c b/gst/audioparsers/gstac3parse.c
+index ee22e3d..c87f743 100644
+--- a/gst/audioparsers/gstac3parse.c
++++ b/gst/audioparsers/gstac3parse.c
+@@ -204,6 +204,7 @@ gst_ac3_parse_reset (GstAc3Parse * ac3parse)
+ {
+   ac3parse->channels = -1;
+   ac3parse->sample_rate = -1;
++  ac3parse->blocks = -1;
+   ac3parse->eac = FALSE;
+ }
+ 
+@@ -457,13 +458,14 @@ gst_ac3_parse_parse_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
+   GstAc3Parse *ac3parse = GST_AC3_PARSE (parse);
+   GstBuffer *buf = frame->buffer;
+   guint fsize, rate, chans, blocks, sid;
+-  gboolean eac;
++  gboolean eac, update_rate = FALSE;
+ 
+   if (!gst_ac3_parse_frame_header (ac3parse, buf, &fsize, &rate, &chans,
+           &blocks, &sid, &eac))
+     goto broken_header;
+ 
+-  GST_LOG_OBJECT (parse, "size: %u, rate: %u, chans: %u", fsize, rate, chans);
++  GST_LOG_OBJECT (parse, "size: %u, blocks: %u, rate: %u, chans: %u", fsize,
++      blocks, rate, chans);
+ 
+   if (G_UNLIKELY (sid)) {
+     /* dependent frame, no need to (ac)count for or consider further */
+@@ -492,9 +494,18 @@ gst_ac3_parse_parse_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
+     ac3parse->channels = chans;
+     ac3parse->eac = eac;
+ 
+-    gst_base_parse_set_frame_rate (parse, rate, 256 * blocks, 2, 2);
++    update_rate = TRUE;
++  }
++
++  if (G_UNLIKELY (ac3parse->blocks != blocks)) {
++    ac3parse->blocks = blocks;
++
++    update_rate = TRUE;
+   }
+ 
++  if (G_UNLIKELY (update_rate))
++    gst_base_parse_set_frame_rate (parse, rate, 256 * blocks, 2, 2);
++
+   return GST_FLOW_OK;
+ 
+ /* ERRORS */
+diff --git a/gst/audioparsers/gstac3parse.h b/gst/audioparsers/gstac3parse.h
+index 6ed01dd..13270bb 100644
+--- a/gst/audioparsers/gstac3parse.h
++++ b/gst/audioparsers/gstac3parse.h
+@@ -53,6 +53,7 @@ struct _GstAc3Parse {
+   /*< private >*/
+   gint         sample_rate;
+   gint         channels;
++  gint         blocks;
+   gboolean     eac;
+ };
+ 

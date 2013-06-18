@@ -1,0 +1,27 @@
+From 76755eed89310e2eaf80f7003274250f39dfa651 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Wed, 24 Aug 2011 14:34:23 +0200
+Subject: [PATCH] rtpjitterbuffer: some more reset when clearing pt map
+
+... which in particular caters for some more reset following a possible
+rtsp PLAY.
+---
+ gst/rtpmanager/gstrtpjitterbuffer.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/gst/rtpmanager/gstrtpjitterbuffer.c b/gst/rtpmanager/gstrtpjitterbuffer.c
+index d72bf33..35f1961 100644
+--- a/gst/rtpmanager/gstrtpjitterbuffer.c
++++ b/gst/rtpmanager/gstrtpjitterbuffer.c
+@@ -677,6 +677,11 @@ gst_rtp_jitter_buffer_clear_pt_map (GstRtpJitterBuffer * jitterbuffer)
+ 
+   JBUF_LOCK (priv);
+   priv->clock_rate = -1;
++  /* do not clear current content, but refresh state for new arrival */
++  GST_DEBUG_OBJECT (jitterbuffer, "reset jitterbuffer");
++  rtp_jitter_buffer_reset_skew (priv->jbuf);
++  priv->last_popped_seqnum = -1;
++  priv->next_seqnum = -1;
+   JBUF_UNLOCK (priv);
+ }
+ 

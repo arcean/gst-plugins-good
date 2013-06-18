@@ -1,0 +1,22 @@
+From a35d1a364cc3590f90f106faf995a08e5ccd9bdf Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Stadler?= <rene.stadler@nokia.com>
+Date: Tue, 2 Jun 2009 18:35:44 +0300
+Subject: [PATCH] rtspsrc: lower UDP receiving timeout to 2 seconds
+
+---
+ gst/rtsp/gstrtspsrc.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/gst/rtsp/gstrtspsrc.c b/gst/rtsp/gstrtspsrc.c
+index 8990d6f..e6d32ce 100644
+--- a/gst/rtsp/gstrtspsrc.c
++++ b/gst/rtsp/gstrtspsrc.c
+@@ -160,7 +160,7 @@ gst_rtsp_src_buffer_mode_get_type (void)
+ #define DEFAULT_PROTOCOLS        GST_RTSP_LOWER_TRANS_UDP | GST_RTSP_LOWER_TRANS_UDP_MCAST | GST_RTSP_LOWER_TRANS_TCP
+ #define DEFAULT_DEBUG            FALSE
+ #define DEFAULT_RETRY            20
+-#define DEFAULT_TIMEOUT          5000000
++#define DEFAULT_TIMEOUT          2000000
+ #define DEFAULT_UDP_BUFFER_SIZE  0x80000
+ #define DEFAULT_TCP_TIMEOUT      20000000
+ #define DEFAULT_LATENCY_MS       2000

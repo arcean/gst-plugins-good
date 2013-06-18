@@ -1,0 +1,59 @@
+From 010d4cd17ca9540e32d530da42cabf16f8fb4976 Mon Sep 17 00:00:00 2001
+From: Vincent Penquerc'h <vincent.penquerch@collabora.co.uk>
+Date: Sun, 4 Dec 2011 12:50:57 +0000
+Subject: [PATCH] flacparse: ensure we only check for sample/block mixup at
+ start
+
+Otherwise we might trigger at some point within the file, but the
+check is only making sense for the second block.
+---
+ gst/audioparsers/gstflacparse.c |   16 +++++++++++-----
+ gst/audioparsers/gstflacparse.h |    1 +
+ 2 files changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/gst/audioparsers/gstflacparse.c b/gst/audioparsers/gstflacparse.c
+index 78f5cf8..d09c038 100644
+--- a/gst/audioparsers/gstflacparse.c
++++ b/gst/audioparsers/gstflacparse.c
+@@ -323,6 +323,7 @@ gst_flac_parse_start (GstBaseParse * parse)
+   flacparse->blocking_strategy = 0;
+   flacparse->block_size = 0;
+   flacparse->sample_number = 0;
++  flacparse->strategy_checked = FALSE;
+ 
+   /* "fLaC" marker */
+   gst_base_parse_set_min_frame_size (GST_BASE_PARSE (flacparse), 4);
+@@ -533,11 +534,16 @@ gst_flac_parse_frame_header_is_valid (GstFlacParse * flacparse,
+   /* Sanity check sample number against blocking strategy, as it seems
+      some files claim fixed block size but supply sample numbers,
+      rather than block numbers. */
+-  if (set && blocking_strategy == 0 && block_size == sample_number) {
+-    GST_WARNING_OBJECT (flacparse, "This file claims fixed block size, "
+-        "but seems to be lying: assuming variable block size");
+-    flacparse->force_variable_block_size = TRUE;
+-    blocking_strategy = 1;
++  if (blocking_strategy == 0 && flacparse->block_size != 0) {
++    if (!flacparse->strategy_checked) {
++      if (block_size == sample_number) {
++        GST_WARNING_OBJECT (flacparse, "This file claims fixed block size, "
++            "but seems to be lying: assuming variable block size");
++        flacparse->force_variable_block_size = TRUE;
++        blocking_strategy = 1;
++      }
++      flacparse->strategy_checked = TRUE;
++    }
+   }
+ 
+   /* 
+diff --git a/gst/audioparsers/gstflacparse.h b/gst/audioparsers/gstflacparse.h
+index 2827552..ebdc1b9 100644
+--- a/gst/audioparsers/gstflacparse.h
++++ b/gst/audioparsers/gstflacparse.h
+@@ -74,6 +74,7 @@ struct _GstFlacParse {
+   guint8 blocking_strategy;
+   guint16 block_size;
+   guint64 sample_number;
++  gboolean strategy_checked;
+ 
+   GstTagList *tags;
+ 

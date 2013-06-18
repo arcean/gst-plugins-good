@@ -1,0 +1,23 @@
+From 6083e3cb9934afac9828beb858565a9cf6ae243a Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Tue, 30 Aug 2011 13:28:21 +0200
+Subject: [PATCH] qtdemux: push mode; fix buffered streaming
+
+That is, in case where no seek is peformed to moov, but preceding
+limited mdat is buffered.
+---
+ gst/isomp4/qtdemux.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/gst/isomp4/qtdemux.c b/gst/isomp4/qtdemux.c
+index 593b277..5b5b7cd 100644
+--- a/gst/isomp4/qtdemux.c
++++ b/gst/isomp4/qtdemux.c
+@@ -4192,6 +4192,7 @@ gst_qtdemux_chain (GstPad * sinkpad, GstBuffer * inbuf)
+            * put preceding buffered data ahead of current moov data.
+            * This should also handle evil mdat, moov, mdat cases and alike */
+           gst_adapter_clear (demux->adapter);
++          gst_adapter_push (demux->adapter, demux->mdatbuffer);
+           demux->mdatbuffer = NULL;
+           demux->offset = demux->mdatoffset;
+           demux->neededbytes = next_entry_size (demux);

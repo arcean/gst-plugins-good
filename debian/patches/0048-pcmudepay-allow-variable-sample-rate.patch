@@ -1,0 +1,36 @@
+From 16a8cad6f40e7e2524cc415df9baf4e6f5b6a27f Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Tue, 24 May 2011 13:12:19 +0200
+Subject: [PATCH] pcmudepay: allow variable sample rate
+
+---
+ gst/rtp/gstrtppcmudepay.c |    7 ++++---
+ 1 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/gst/rtp/gstrtppcmudepay.c b/gst/rtp/gstrtppcmudepay.c
+index fd1f1e5..f826900 100644
+--- a/gst/rtp/gstrtppcmudepay.c
++++ b/gst/rtp/gstrtppcmudepay.c
+@@ -46,18 +46,19 @@ static GstStaticPadTemplate gst_rtp_pcmu_depay_sink_template =
+     GST_STATIC_CAPS ("application/x-rtp, "
+         "media = (string) \"audio\", "
+         "payload = (int) " GST_RTP_PAYLOAD_DYNAMIC_STRING ", "
+-        "clock-rate = (int) 8000, " "encoding-name = (string) \"PCMU\";"
++        "clock-rate = (int) [1, MAX ], " "encoding-name = (string) \"PCMU\";"
+         "application/x-rtp, "
+         "media = (string) \"audio\", "
+         "payload = (int) " GST_RTP_PAYLOAD_PCMU_STRING ", "
+-        "clock-rate = (int) 8000")
++        "clock-rate = (int) [1, MAX ]")
+     );
+ 
+ static GstStaticPadTemplate gst_rtp_pcmu_depay_src_template =
+ GST_STATIC_PAD_TEMPLATE ("src",
+     GST_PAD_SRC,
+     GST_PAD_ALWAYS,
+-    GST_STATIC_CAPS ("audio/x-mulaw, channels = (int) 1, rate = (int) 8000")
++    GST_STATIC_CAPS ("audio/x-mulaw, "
++        "channels = (int) 1, rate = (int) [1, MAX ]")
+     );
+ 
+ static GstBuffer *gst_rtp_pcmu_depay_process (GstBaseRTPDepayload * depayload,

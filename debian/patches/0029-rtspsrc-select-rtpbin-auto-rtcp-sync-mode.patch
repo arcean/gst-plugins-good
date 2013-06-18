@@ -1,0 +1,38 @@
+From c5a2c32abb916a2bf5088279b255038f7a1da3d1 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Sun, 31 Jul 2011 15:08:55 +0200
+Subject: [PATCH] rtspsrc: select rtpbin auto rtcp sync mode
+
+---
+ gst/rtsp/gstrtspsrc.c |   11 +++++++++++
+ 1 files changed, 11 insertions(+), 0 deletions(-)
+
+diff --git a/gst/rtsp/gstrtspsrc.c b/gst/rtsp/gstrtspsrc.c
+index 8968105..3de1e2e 100644
+--- a/gst/rtsp/gstrtspsrc.c
++++ b/gst/rtsp/gstrtspsrc.c
+@@ -136,6 +136,13 @@ enum _GstRtspSrcBufferMode
+   BUFFER_MODE_AUTO
+ };
+ 
++enum _GstRtspSrcRtcpSyncMode
++{
++  RTCP_SYNC_ALWAYS,
++  RTCP_SYNC_INITIAL,
++  RTCP_SYNC_AUTO
++};
++
+ #define GST_TYPE_RTSP_SRC_BUFFER_MODE (gst_rtsp_src_buffer_mode_get_type())
+ static GType
+ gst_rtsp_src_buffer_mode_get_type (void)
+@@ -2442,6 +2449,10 @@ gst_rtspsrc_stream_configure_manager (GstRTSPSrc * src, GstRTSPStream * stream,
+           }
+         }
+       }
++      if (g_object_class_find_property (klass, "rtcp-sync")) {
++        GST_DEBUG_OBJECT (src, "selecting auto rtcp sync mode");
++        g_object_set (src->manager, "rtcp-sync", RTCP_SYNC_AUTO, NULL);
++      }
+ 
+       /* connect to signals if we did not already do so */
+       GST_DEBUG_OBJECT (src, "connect to signals on session manager, stream %p",

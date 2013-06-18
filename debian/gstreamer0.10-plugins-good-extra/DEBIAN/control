@@ -1,0 +1,18 @@
+Package: gstreamer0.10-plugins-good-extra
+Source: gst-plugins-good0.10
+Version: 0.10.29-0maemo24+0m8
+Architecture: armel
+Maintainer: Maemo Multimedia <multimedia@maemo.org>
+Installed-Size: 1212
+Depends: libc6 (>= 2.7), libcairo2, libgcc1 (>= 1:4.1.1), libglib2.0-0 (>= 2.24.0), libgstreamer-plugins-base0.10-0 (>= 0.10.34), libgstreamer0.10-0 (>= 0.10.34), liborc-0.4-0 (>= 0.4.5), libxml2 (>= 2.6.27), gstreamer0.10-plugins-good (>= 0.10.29-0maemo24+0m8)
+Replaces: gstreamer0.10-plugins-good (<< 0.10.15-0maemo4)
+Section: libs
+Priority: optional
+Description: Collection of various GStreamer plugins
+ This package provides gstmultifilesink and gstmultifilesrc
+ elements.
+Aegis-Manifest: empty
+Original-Maintainer: Maintainers of GStreamer packages <pkg-gstreamer-maintainers@lists.alioth.debian.org>
+Original-Uploaders: Loic Minier <lool@dooz.org>,
+           Sebastian Dröge <slomo@debian.org>,
+           Sjoerd Simons <sjoerd@debian.org>

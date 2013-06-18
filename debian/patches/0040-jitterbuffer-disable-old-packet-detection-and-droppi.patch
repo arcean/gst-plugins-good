@@ -1,0 +1,24 @@
+From 5c1d0d3dca3325b8734d6512ff7f293d88555f94 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Wed, 24 Aug 2011 14:33:10 +0200
+Subject: [PATCH] jitterbuffer: disable old packet detection and dropping
+
+... since we should be able to handle old packets better due to
+rtptime discontinuity in place.
+---
+ gst/rtpmanager/gstrtpjitterbuffer.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/gst/rtpmanager/gstrtpjitterbuffer.c b/gst/rtpmanager/gstrtpjitterbuffer.c
+index 7b36aa5..d72bf33 100644
+--- a/gst/rtpmanager/gstrtpjitterbuffer.c
++++ b/gst/rtpmanager/gstrtpjitterbuffer.c
+@@ -1368,7 +1368,7 @@ gst_rtp_jitter_buffer_chain (GstPad * pad, GstBuffer * buffer)
+         GST_DEBUG_OBJECT (jitterbuffer, "tolerable gap");
+       }
+       /* maybe it's an old stray packet, e.g. following seek */
+-      if (priv->base_seqnum != -1) {
++      if (FALSE && priv->base_seqnum != -1) {
+         gint ogap;
+ 
+         ogap = gst_rtp_buffer_compare_seqnum (priv->old_in_seqnum, seqnum);

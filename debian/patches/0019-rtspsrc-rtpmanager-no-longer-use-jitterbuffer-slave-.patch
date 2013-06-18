@@ -1,0 +1,44 @@
+From e92fb747453b9f745f3545fb9cea5d36ef507fd5 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Fri, 15 Jul 2011 15:52:06 +0200
+Subject: [PATCH] rtspsrc, rtpmanager: no longer use jitterbuffer slave mode
+
+That is, always use provided rtp timestamp for output timestamp,
+and also buffer in non-live cases (wth duration).
+
+However, ensure mininmal upstream interpolation (base timestamp)
+in none mode.
+---
+ gst/rtpmanager/rtpjitterbuffer.c |    3 +++
+ gst/rtsp/gstrtspsrc.c            |    4 ++--
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/gst/rtpmanager/rtpjitterbuffer.c b/gst/rtpmanager/rtpjitterbuffer.c
+index 341388b..a5230ec 100644
+--- a/gst/rtpmanager/rtpjitterbuffer.c
++++ b/gst/rtpmanager/rtpjitterbuffer.c
+@@ -636,6 +636,9 @@ rtp_jitter_buffer_insert (RTPJitterBuffer * jbuf, GstBuffer * buf,
+   rtptime = gst_rtp_buffer_get_timestamp (buf);
+   switch (jbuf->mode) {
+     case RTP_JITTER_BUFFER_MODE_NONE:
++      if (jbuf->base_time != -1)
++        time = -1;
++      break;
+     case RTP_JITTER_BUFFER_MODE_BUFFER:
+       /* send 0 as the first timestamp and -1 for the other ones. This will
+        * interpollate them from the RTP timestamps with a 0 origin. In buffering
+diff --git a/gst/rtsp/gstrtspsrc.c b/gst/rtsp/gstrtspsrc.c
+index 22d780f..61bdfb0 100644
+--- a/gst/rtsp/gstrtspsrc.c
++++ b/gst/rtsp/gstrtspsrc.c
+@@ -2437,8 +2437,8 @@ gst_rtspsrc_stream_configure_manager (GstRTSPSrc * src, GstRTSPStream * stream,
+             g_object_set (src->manager, "buffer-mode", BUFFER_MODE_BUFFER,
+                 NULL);
+           } else {
+-            GST_DEBUG_OBJECT (src, "selected slave");
+-            g_object_set (src->manager, "buffer-mode", BUFFER_MODE_SLAVE, NULL);
++            GST_DEBUG_OBJECT (src, "selected slave -> none");
++            g_object_set (src->manager, "buffer-mode", BUFFER_MODE_NONE, NULL);
+           }
+         }
+       }

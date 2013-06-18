@@ -1,0 +1,52 @@
+From b3d9a07f5ade09b84ed379e000bd1c4d0079b30d Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Mon, 22 Aug 2011 14:47:53 +0200
+Subject: [PATCH] rtspsrc: do not set elements to PLAYING when doing seek in PAUSED
+
+---
+ gst/rtsp/gstrtspsrc.c |   11 +++++++----
+ 1 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/gst/rtsp/gstrtspsrc.c b/gst/rtsp/gstrtspsrc.c
+index 898673e..f61e4d2 100644
+--- a/gst/rtsp/gstrtspsrc.c
++++ b/gst/rtsp/gstrtspsrc.c
+@@ -1662,7 +1662,7 @@ cleanup:
+ }
+ 
+ static void
+-gst_rtspsrc_flush (GstRTSPSrc * src, gboolean flush)
++gst_rtspsrc_flush (GstRTSPSrc * src, gboolean flush, gboolean playing)
+ {
+   GstEvent *event;
+   gint cmd, i;
+@@ -1680,7 +1680,10 @@ gst_rtspsrc_flush (GstRTSPSrc * src, gboolean flush)
+     event = gst_event_new_flush_stop ();
+     GST_DEBUG_OBJECT (src, "stop flush");
+     cmd = CMD_WAIT;
+-    state = GST_STATE_PLAYING;
++    if (playing)
++      state = GST_STATE_PLAYING;
++    else
++      state = GST_STATE_PAUSED;
+     clock = gst_element_get_clock (GST_ELEMENT_CAST (src));
+     if (clock) {
+       base_time = gst_clock_get_time (clock);
+@@ -1833,7 +1836,7 @@ gst_rtspsrc_perform_seek (GstRTSPSrc * src, GstEvent * event)
+    * blocking in preroll). */
+   if (flush) {
+     GST_DEBUG_OBJECT (src, "starting flush");
+-    gst_rtspsrc_flush (src, TRUE);
++    gst_rtspsrc_flush (src, TRUE, FALSE);
+   } else {
+     if (src->task) {
+       gst_task_pause (src->task);
+@@ -1885,7 +1888,7 @@ gst_rtspsrc_perform_seek (GstRTSPSrc * src, GstEvent * event)
+   if (flush) {
+     /* if we started flush, we stop now */
+     GST_DEBUG_OBJECT (src, "stopping flush");
+-    gst_rtspsrc_flush (src, FALSE);
++    gst_rtspsrc_flush (src, FALSE, playing);
+   } else if (src->running) {
+     /* we are running the current segment and doing a non-flushing seek,
+      * close the segment first based on the previous last_stop. */

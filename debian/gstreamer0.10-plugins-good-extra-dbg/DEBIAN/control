@@ -1,0 +1,18 @@
+Package: gstreamer0.10-plugins-good-extra-dbg
+Source: gst-plugins-good0.10
+Version: 0.10.29-0maemo24+0m8
+Architecture: armel
+Maintainer: Maemo Multimedia <multimedia@maemo.org>
+Installed-Size: 3320
+Depends: gstreamer0.10-plugins-good-extra (= 0.10.29-0maemo24+0m8)
+Replaces: gstreamer0.10-plugins-good-dbg (<< 0.10.15-0maemo4)
+Section: libdevel
+Priority: extra
+Description: Debug symbols for gstreamer0.10-plugins-good-extra
+ This package provides gstmultifilesink and gstmultifilesrc
+ elements and debug symbols.
+Aegis-Manifest: empty
+Original-Maintainer: Maintainers of GStreamer packages <pkg-gstreamer-maintainers@lists.alioth.debian.org>
+Original-Uploaders: Loic Minier <lool@dooz.org>,
+           Sebastian Dröge <slomo@debian.org>,
+           Sjoerd Simons <sjoerd@debian.org>

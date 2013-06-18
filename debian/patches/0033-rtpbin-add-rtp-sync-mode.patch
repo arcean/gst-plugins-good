@@ -1,0 +1,208 @@
+From ea36226efc076905eeb14c3afd93eac111f990cf Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Wed, 3 Aug 2011 11:39:19 +0200
+Subject: [PATCH] rtpbin: add rtp sync mode
+
+... which uses RTSP provided RTP-Info rtptime to sync streams.
+---
+ gst/rtpmanager/gstrtpbin.c          |   81 ++++++++++++++++++++++++++++-------
+ gst/rtpmanager/gstrtpjitterbuffer.c |    9 +++-
+ 2 files changed, 72 insertions(+), 18 deletions(-)
+
+diff --git a/gst/rtpmanager/gstrtpbin.c b/gst/rtpmanager/gstrtpbin.c
+index f7467bb..b3a03df 100644
+--- a/gst/rtpmanager/gstrtpbin.c
++++ b/gst/rtpmanager/gstrtpbin.c
+@@ -269,7 +269,8 @@ enum
+ {
+   GST_RTP_BIN_RTCP_SYNC_ALWAYS,
+   GST_RTP_BIN_RTCP_SYNC_INITIAL,
+-  GST_RTP_BIN_RTCP_SYNC_AUTO
++  GST_RTP_BIN_RTCP_SYNC_AUTO,
++  GST_RTP_BIN_RTCP_SYNC_RTP
+ };
+ 
+ #define GST_RTP_BIN_RTCP_SYNC_TYPE (gst_rtp_bin_rtcp_sync_get_type())
+@@ -281,6 +282,7 @@ gst_rtp_bin_rtcp_sync_get_type (void)
+     {GST_RTP_BIN_RTCP_SYNC_ALWAYS, "always", "always"},
+     {GST_RTP_BIN_RTCP_SYNC_INITIAL, "initial", "initial"},
+     {GST_RTP_BIN_RTCP_SYNC_AUTO, "auto", "auto"},
++    {GST_RTP_BIN_RTCP_SYNC_RTP, "rtp", "rtp"},
+     {0, NULL, NULL},
+   };
+ 
+@@ -1014,7 +1016,8 @@ stream_set_ts_offset (GstRtpBin * bin, GstRtpBinStream * stream,
+ static void
+ gst_rtp_bin_associate (GstRtpBin * bin, GstRtpBinStream * stream, guint8 len,
+     guint8 * data, guint64 ntptime, guint64 last_extrtptime,
+-    guint64 base_rtptime, guint64 base_time, guint clock_rate)
++    guint64 base_rtptime, guint64 base_time, guint clock_rate,
++    gint64 rtp_clock_base)
+ {
+   GstRtpBinClient *client;
+   gboolean created;
+@@ -1057,8 +1060,9 @@ gst_rtp_bin_associate (GstRtpBin * bin, GstRtpBinStream * stream, guint8 len,
+ 
+   GST_DEBUG_OBJECT (bin,
+       "base %" G_GUINT64_FORMAT ", extrtptime %" G_GUINT64_FORMAT
+-      ", local RTP %" G_GUINT64_FORMAT ", clock-rate %d", base_rtptime,
+-      last_extrtptime, local_rtp, clock_rate);
++      ", local RTP %" G_GUINT64_FORMAT ", clock-rate %d, "
++      "clock-base %" G_GINT64_FORMAT, base_rtptime,
++      last_extrtptime, local_rtp, clock_rate, rtp_clock_base);
+ 
+   /* calculate local RTP time in gstreamer timestamp, we essentially perform the
+    * same conversion that a jitterbuffer would use to convert an rtp timestamp
+@@ -1129,13 +1133,52 @@ gst_rtp_bin_associate (GstRtpBin * bin, GstRtpBinStream * stream, guint8 len,
+     /* some alternative setting allow ignoring RTCP as much as possible,
+      * for servers generating bogus ntp timeline */
+     min = rtp_min = G_MAXINT64;
+-    use_rtp = (bin->rtcp_sync == GST_RTP_BIN_RTCP_SYNC_AUTO);
+-    /* convert to gst time */
+-    clock_base =
+-        gst_util_uint64_scale_int (base_rtptime, GST_SECOND, clock_rate);
+-    /* fake rtcp generated on rtp timestamp
+-     * fixed offset needed to simulate some typically large ntp time */
+-    stream->rtp_delta = (GST_SECOND << 4) + clock_base - base_time;
++    use_rtp = (bin->rtcp_sync >= GST_RTP_BIN_RTCP_SYNC_AUTO);
++    if (bin->rtcp_sync == GST_RTP_BIN_RTCP_SYNC_AUTO) {
++      /* convert to gst time */
++      clock_base =
++          gst_util_uint64_scale_int (base_rtptime, GST_SECOND, clock_rate);
++      /* fake rtcp generated on rtp timestamp
++       * fixed offset needed to simulate some typically large ntp time */
++      stream->rtp_delta = (GST_SECOND << 4) + clock_base - base_time;
++    } else if (bin->rtcp_sync == GST_RTP_BIN_RTCP_SYNC_RTP) {
++      guint64 ext_base;
++
++      /* signed version for convienience */
++      clock_base = base_rtptime;
++      /* deal with possible wrap-around */
++      ext_base = base_rtptime;
++      rtp_clock_base = gst_rtp_buffer_ext_timestamp (&ext_base, rtp_clock_base);
++      /* sanity check; base rtp and provided clock_base should be close */
++      if (rtp_clock_base >= clock_base) {
++        if (rtp_clock_base - clock_base < 10 * clock_rate) {
++          rtp_clock_base = base_time +
++              gst_util_uint64_scale_int (rtp_clock_base - clock_base,
++              GST_SECOND, clock_rate);
++        } else {
++          use_rtp = FALSE;
++        }
++      } else {
++        if (clock_base - rtp_clock_base < 10 * clock_rate) {
++          rtp_clock_base = base_time -
++              gst_util_uint64_scale_int (clock_base - rtp_clock_base,
++              GST_SECOND, clock_rate);
++        } else {
++          use_rtp = FALSE;
++        }
++      }
++      /* warn and bail for clarity out if no sane values */
++      if (!use_rtp) {
++        GST_WARNING_OBJECT (bin, "unable to sync to provided rtptime");
++        return;
++      }
++      /* store to track changes */
++      clock_base = rtp_clock_base;
++      /* generate a fake as before,
++       * now equating rtptime obtained from RTP-Info,
++       * where the large time represent the otherwise irrelevant npt/ntp time */
++      stream->rtp_delta = (GST_SECOND << 32) - rtp_clock_base;
++    }
+     /* arrange to re-sync for each stream upon significant change,
+      * e.g. post-seek */
+     all_sync = (stream->clock_base == clock_base);
+@@ -1158,9 +1201,11 @@ gst_rtp_bin_associate (GstRtpBin * bin, GstRtpBinStream * stream, guint8 len,
+        * consider it as master and optionally never mind rtcp
+        * (or rather fake a report with ntptime based on rtp as calculated above)
+        * except for initial base offset handling */
+-      if (ostream->clock_base - clock_base > GST_SECOND ||
+-          clock_base - ostream->clock_base > GST_SECOND)
+-        use_rtp = FALSE;
++      if (bin->rtcp_sync == GST_RTP_BIN_RTCP_SYNC_AUTO) {
++        if (ostream->clock_base - clock_base > GST_SECOND ||
++            clock_base - ostream->clock_base > GST_SECOND)
++          use_rtp = FALSE;
++      }
+ 
+       if (ostream->rt_delta < min)
+         min = ostream->rt_delta;
+@@ -1176,6 +1221,7 @@ gst_rtp_bin_associate (GstRtpBin * bin, GstRtpBinStream * stream, guint8 len,
+     GST_DEBUG_OBJECT (bin, "rtcp sync mode %d", bin->rtcp_sync);
+     switch (bin->rtcp_sync) {
+       case GST_RTP_BIN_RTCP_SYNC_AUTO:
++      case GST_RTP_BIN_RTCP_SYNC_RTP:
+         if (!use_rtp)
+           break;
+         GST_DEBUG_OBJECT (bin, "using rtp generated reports; "
+@@ -1194,7 +1240,7 @@ gst_rtp_bin_associate (GstRtpBin * bin, GstRtpBinStream * stream, guint8 len,
+ 
+     /* FIXME ? threshold as property to tweak ALWAYS mode ? */
+     /* bail out if we adjusted recently enough */
+-    if (all_sync && last_unix - bin->priv->last_unix < 30 * GST_SECOND) {
++    if (FALSE && all_sync && last_unix - bin->priv->last_unix < 30 * GST_SECOND) {
+       GST_DEBUG_OBJECT (bin, "discarding RTCP sender packet for sync; "
+           "previous sender info too recent "
+           "(previous UNIX %" G_GUINT64_FORMAT ")", bin->priv->last_unix);
+@@ -1251,6 +1297,7 @@ gst_rtp_bin_handle_sync (GstElement * jitterbuffer, GstStructure * s,
+   guint64 base_rtptime;
+   guint64 base_time;
+   guint clock_rate;
++  guint64 clock_base;
+   guint64 extrtptime;
+   GstBuffer *buffer;
+ 
+@@ -1266,6 +1313,7 @@ gst_rtp_bin_handle_sync (GstElement * jitterbuffer, GstStructure * s,
+       g_value_get_uint64 (gst_structure_get_value (s, "base-rtptime"));
+   base_time = g_value_get_uint64 (gst_structure_get_value (s, "base-time"));
+   clock_rate = g_value_get_uint (gst_structure_get_value (s, "clock-rate"));
++  clock_base = g_value_get_uint64 (gst_structure_get_value (s, "clock-base"));
+   extrtptime =
+       g_value_get_uint64 (gst_structure_get_value (s, "sr-ext-rtptime"));
+   buffer = gst_value_get_buffer (gst_structure_get_value (s, "sr-buffer"));
+@@ -1318,7 +1366,8 @@ gst_rtp_bin_handle_sync (GstElement * jitterbuffer, GstStructure * s,
+               GST_RTP_BIN_LOCK (bin);
+               /* associate the stream to CNAME */
+               gst_rtp_bin_associate (bin, stream, len, data,
+-                  ntptime, extrtptime, base_rtptime, base_time, clock_rate);
++                  ntptime, extrtptime, base_rtptime, base_time, clock_rate,
++                  clock_base);
+               GST_RTP_BIN_UNLOCK (bin);
+             }
+           }
+diff --git a/gst/rtpmanager/gstrtpjitterbuffer.c b/gst/rtpmanager/gstrtpjitterbuffer.c
+index 310ade4..3532da7 100644
+--- a/gst/rtpmanager/gstrtpjitterbuffer.c
++++ b/gst/rtpmanager/gstrtpjitterbuffer.c
+@@ -2045,6 +2045,7 @@ gst_rtp_jitter_buffer_chain_rtcp (GstPad * pad, GstBuffer * buffer)
+   guint64 ext_rtptime, diff;
+   guint32 rtptime;
+   gboolean drop = FALSE;
++  guint64 clock_base;
+ 
+   jitterbuffer = GST_RTP_JITTER_BUFFER (gst_pad_get_parent (pad));
+ 
+@@ -2078,9 +2079,12 @@ gst_rtp_jitter_buffer_chain_rtcp (GstPad * pad, GstBuffer * buffer)
+   rtp_jitter_buffer_get_sync (priv->jbuf, &base_rtptime, &base_time,
+       &clock_rate, &last_rtptime);
+ 
++  clock_base = priv->clock_base;
++
+   GST_DEBUG_OBJECT (jitterbuffer, "ext SR %" G_GUINT64_FORMAT ", base %"
+-      G_GUINT64_FORMAT ", clock-rate %" G_GUINT32_FORMAT,
+-      ext_rtptime, base_rtptime, clock_rate);
++      G_GUINT64_FORMAT ", clock-rate %" G_GUINT32_FORMAT
++      ", clock-base %" G_GUINT64_FORMAT,
++      ext_rtptime, base_rtptime, clock_rate, clock_base);
+ 
+   if (base_rtptime == -1 || clock_rate == -1 || base_time == -1) {
+     GST_DEBUG_OBJECT (jitterbuffer, "dropping, no RTP values");
+@@ -2115,6 +2119,7 @@ gst_rtp_jitter_buffer_chain_rtcp (GstPad * pad, GstBuffer * buffer)
+         "base-rtptime", G_TYPE_UINT64, base_rtptime,
+         "base-time", G_TYPE_UINT64, base_time,
+         "clock-rate", G_TYPE_UINT, clock_rate,
++        "clock-base", G_TYPE_UINT64, clock_base,
+         "sr-ext-rtptime", G_TYPE_UINT64, ext_rtptime,
+         "sr-buffer", GST_TYPE_BUFFER, buffer, NULL);
+ 

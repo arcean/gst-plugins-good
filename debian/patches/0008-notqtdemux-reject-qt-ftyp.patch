@@ -1,0 +1,41 @@
+From ece63c1cc1678ed30788c08691528d72d2fc9d9e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Stadler?= <rene.stadler@nokia.com>
+Date: Fri, 3 Dec 2010 13:52:37 +0200
+Subject: [PATCH] notqtdemux: reject qt ftyp
+
+---
+ gst/isomp4/qtdemux.c |   14 ++++++++++++++
+ 1 files changed, 14 insertions(+), 0 deletions(-)
+
+diff --git a/gst/isomp4/qtdemux.c b/gst/isomp4/qtdemux.c
+index 12893d1..8c8a092 100644
+--- a/gst/isomp4/qtdemux.c
++++ b/gst/isomp4/qtdemux.c
+@@ -2748,6 +2748,13 @@ gst_qtdemux_loop_state_header (GstQTDemux * qtdemux)
+       qtdemux_parse_ftyp (qtdemux, GST_BUFFER_DATA (ftyp),
+           GST_BUFFER_SIZE (ftyp));
+       gst_buffer_unref (ftyp);
++      if (G_UNLIKELY (qtdemux->major_brand == FOURCC_qt__)) {
++        GST_ELEMENT_ERROR (qtdemux, STREAM, DEMUX,
++            (_("This file is not supported.")),
++            ("Found incompatible ftyp major brand 'qt  '"));
++        ret = GST_FLOW_ERROR;
++        goto beach;
++      }
+       break;
+     }
+     case FOURCC_uuid:
+@@ -4159,6 +4166,13 @@ gst_qtdemux_chain (GstPad * sinkpad, GstBuffer * inbuf)
+         } else if (fourcc == FOURCC_ftyp) {
+           GST_DEBUG_OBJECT (demux, "Parsing [ftyp]");
+           qtdemux_parse_ftyp (demux, data, demux->neededbytes);
++          if (G_UNLIKELY (demux->major_brand == FOURCC_qt__)) {
++            GST_ELEMENT_ERROR (demux, STREAM, DEMUX,
++                (_("This file is not supported.")),
++                ("Found incompatible ftyp major brand 'qt  '"));
++            ret = GST_FLOW_ERROR;
++	    break;
++          }
+         } else if (fourcc == FOURCC_uuid) {
+           GST_DEBUG_OBJECT (demux, "Parsing [uuid]");
+           qtdemux_parse_uuid (demux, data, demux->neededbytes);

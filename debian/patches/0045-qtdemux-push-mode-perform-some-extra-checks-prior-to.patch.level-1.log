@@ -1,0 +1,2 @@
+patching file gst/isomp4/qtdemux.c
+patching file gst/isomp4/qtdemux.h

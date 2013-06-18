@@ -1,0 +1,28 @@
+From dee32b721de1c3a35ff6771eafcfefa2b247bbb6 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Stadler?= <rene.stadler@nokia.com>
+Date: Thu, 14 May 2009 15:42:34 +0300
+Subject: [PATCH] Drop git submodule usage from autogen.sh.
+
+---
+ autogen.sh |    8 --------
+ 1 files changed, 0 insertions(+), 8 deletions(-)
+
+diff --git a/autogen.sh b/autogen.sh
+index a49317f..47b6f33 100755
+--- a/autogen.sh
++++ b/autogen.sh
+@@ -5,14 +5,6 @@ DIE=0
+ package=gst-plugins-good
+ srcfile=gst/law/alaw.c
+ 
+-# Make sure we have common
+-if test ! -f common/gst-autogen.sh;
+-then
+-  echo "+ Setting up common submodule"
+-  git submodule init
+-fi
+-git submodule update
+-
+ # source helper functions
+ if test ! -f common/gst-autogen.sh;
+ then

@@ -1,0 +1,42 @@
+From aee0dd0a49c2dba64c7bdabec8acdaefccf80a5d Mon Sep 17 00:00:00 2001
+From: Lasse Laukkanen <lasse.laukkanen@digia.com>
+Date: Fri, 16 Sep 2011 16:53:22 +0300
+Subject: [PATCH] isomp4: Fix allowing zero duration tracks
+
+https://bugzilla.gnome.org/show_bug.cgi?id=637486
+---
+ gst/isomp4/gstqtmux.c |   14 ++++++++++++--
+ 1 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/gst/isomp4/gstqtmux.c b/gst/isomp4/gstqtmux.c
+index e6a5dd2..72a282f 100644
+--- a/gst/isomp4/gstqtmux.c
++++ b/gst/isomp4/gstqtmux.c
+@@ -1730,15 +1730,25 @@ gst_qt_mux_stop_file (GstQTMux * qtmux)
+     GstCollectData *cdata = (GstCollectData *) walk->data;
+     GstQTPad *qtpad = (GstQTPad *) cdata;
+ 
+-    /* send last buffer */
++    /* avoid add_buffer complaining if not negotiated
++     * in which case no buffers either, so skipping */
++    if (!qtpad->fourcc) {
++      GST_DEBUG_OBJECT (qtmux, "Pad %s has never had buffers",
++          GST_PAD_NAME (qtpad->collect.pad));
++      continue;
++    }
++
++    /* send last buffer; also flushes possibly queued buffers/ts */
+     GST_DEBUG_OBJECT (qtmux, "Sending the last buffer for pad %s",
+         GST_PAD_NAME (qtpad->collect.pad));
+     ret = gst_qt_mux_add_buffer (qtmux, qtpad, NULL);
+-    if (ret != GST_FLOW_OK)
++    if (ret != GST_FLOW_OK) {
+       GST_WARNING_OBJECT (qtmux, "Failed to send last buffer for %s, "
+           "flow return: %s", GST_PAD_NAME (qtpad->collect.pad),
+           gst_flow_get_name (ret));
++    }
+ 
++    /* having flushed above, can check for buffers now */
+     if (!GST_CLOCK_TIME_IS_VALID (qtpad->first_ts)) {
+       GST_DEBUG_OBJECT (qtmux, "Pad %s has no buffers",
+           GST_PAD_NAME (qtpad->collect.pad));

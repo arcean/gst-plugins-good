@@ -1,0 +1,8 @@
+gstreamer:Version=0.10
+gstreamer:Elements=agingtv, alpha, alphacolor, aspectratiocrop, audioamplify, audiochebband, audiocheblimit, audiodynamic, audioecho, audiofirfilter, audioiirfilter, audioinvert, audiokaraoke, audiopanorama, audiowsincband, audiowsinclimit, auparse, breakmydata, cairorender, cairotextoverlay, cairotimeoverlay, capsdebug, capssetter, cmmldec, cmmlenc, cpureport, cutter, deinterleave, dicetv, edgetv, efence, equalizer-10bands, equalizer-3bands, equalizer-nbands, flxdec, gamma, goom, goom2k1, imagefreeze, interleave, level, monoscope, multifilesink, multifilesrc, multipartdemux, multipartmux, navigationtest, navseek, optv, progressreport, pushfilesrc, quarktv, radioactv, revtv, rganalysis, rglimiter, rgvolume, rippletv, rndbuffersize, shagadelictv, shapewipe, smpte, smptealpha, spectrum, streaktv, taginject, testsink, vertigotv, videobalance, videobox, videocrop, videoflip, videomixer, videomixer2, warptv, wavenc
+gstreamer:Provides=gstreamer0.10-visualization
+gstreamer:URISources=pushfile
+gstreamer:Encoders=application/pdf; application/postscript; audio/x-wav; image/png; image/svg+xml; multipart/x-mixed-replace; text/x-cmml, encoded=(boolean)true
+gstreamer:Decoders=audio/x-au; multipart/x-mixed-replace; text/x-cmml, encoded=(boolean)true; video/x-fli
+shlibs:Depends=libc6 (>= 2.7), libcairo2, libgcc1 (>= 1:4.1.1), libglib2.0-0 (>= 2.24.0), libgstreamer-plugins-base0.10-0 (>= 0.10.34), libgstreamer0.10-0 (>= 0.10.34), liborc-0.4-0 (>= 0.4.5), libxml2 (>= 2.6.27)
+misc:Depends=

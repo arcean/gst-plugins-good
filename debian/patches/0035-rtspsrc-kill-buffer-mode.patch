@@ -1,0 +1,31 @@
+From bbe1797d09e3114e0c81ed10cb2cd51968e16a50 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Olivier=20Cr=C3=AAte?= <olivier.crete@collabora.co.uk>
+Date: Wed, 3 Aug 2011 14:21:58 +0300
+Subject: [PATCH] rtspsrc: kill buffer mode
+
+---
+ gst/rtsp/gstrtspsrc.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/gst/rtsp/gstrtspsrc.c b/gst/rtsp/gstrtspsrc.c
+index c10d580..898673e 100644
+--- a/gst/rtsp/gstrtspsrc.c
++++ b/gst/rtsp/gstrtspsrc.c
+@@ -2411,7 +2411,7 @@ gst_rtspsrc_stream_configure_manager (GstRTSPSrc * src, GstRTSPStream * stream,
+       klass = G_OBJECT_GET_CLASS (G_OBJECT (src->manager));
+       if (g_object_class_find_property (klass, "buffer-mode")) {
+         if (src->buffer_mode != BUFFER_MODE_AUTO) {
+-          g_object_set (src->manager, "buffer-mode", src->buffer_mode, NULL);
++          g_object_set (src->manager, "buffer-mode", BUFFER_MODE_NONE, NULL);
+         } else {
+           gboolean need_slave;
+           GstStructure *s;
+@@ -2434,7 +2434,7 @@ gst_rtspsrc_stream_configure_manager (GstRTSPSrc * src, GstRTSPStream * stream,
+           if (GST_CLOCK_TIME_IS_VALID (src->segment.duration) &&
+               src->segment.duration && !need_slave) {
+             GST_DEBUG_OBJECT (src, "selected buffer");
+-            g_object_set (src->manager, "buffer-mode", BUFFER_MODE_BUFFER,
++            g_object_set (src->manager, "buffer-mode", BUFFER_MODE_NONE,
+                 NULL);
+           } else {
+             GST_DEBUG_OBJECT (src, "selected slave -> none");

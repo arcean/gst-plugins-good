@@ -1,0 +1,69 @@
+From c4592c67d81db62d03f4d790707df8e2e939b460 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Olivier=20Cr=C3=AAte?= <olivier.crete@collabora.com>
+Date: Thu, 14 Jul 2011 16:23:49 -0400
+Subject: [PATCH] rtph264depay: Drop all buffers before a SPS & PPS have been received
+
+Drop all buffers before a SPS & PPS have been received, some decoders are weak.
+
+MAEMO SPECIFIC: Do not merge upstream
+---
+ gst/rtp/gstrtph264depay.c |   18 ++++++++++++++++++
+ gst/rtp/gstrtph264depay.h |    2 ++
+ 2 files changed, 20 insertions(+), 0 deletions(-)
+
+diff --git a/gst/rtp/gstrtph264depay.c b/gst/rtp/gstrtph264depay.c
+index 384a68b..804fde8 100644
+--- a/gst/rtp/gstrtph264depay.c
++++ b/gst/rtp/gstrtph264depay.c
+@@ -159,6 +159,8 @@ gst_rtp_h264_depay_init (GstRtpH264Depay * rtph264depay,
+   rtph264depay->byte_stream = DEFAULT_BYTE_STREAM;
+   rtph264depay->merge = DEFAULT_ACCESS_UNIT;
+   rtph264depay->need_keyframe = TRUE;
++  rtph264depay->have_sps = FALSE;
++  rtph264depay->have_pps = FALSE;
+ }
+ 
+ static void
+@@ -171,6 +173,8 @@ gst_rtp_h264_depay_reset (GstRtpH264Depay * rtph264depay)
+   rtph264depay->last_keyframe = FALSE;
+   rtph264depay->last_ts = 0;
+   rtph264depay->need_keyframe = TRUE;
++  rtph264depay->have_sps = FALSE;
++  rtph264depay->have_pps = FALSE;
+ }
+ 
+ static void
+@@ -559,6 +563,20 @@ gst_rtp_h264_depay_handle_nal (GstRtpH264Depay * rtph264depay, GstBuffer * nal,
+   out_keyframe = keyframe;
+   out_timestamp = in_timestamp;
+ 
++  if (nal_type == 7)
++    rtph264depay->have_sps = TRUE;
++  else if (nal_type == 8)
++    rtph264depay->have_pps = TRUE;
++  else if (!rtph264depay->codec_data &&
++      (!rtph264depay->have_pps || !rtph264depay->have_sps)) {
++    gst_pad_push_event (GST_BASE_RTP_DEPAYLOAD_SINKPAD (depayload),
++        gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM,
++            gst_structure_new ("GstForceKeyUnit",
++                "all-headers", G_TYPE_BOOLEAN, TRUE, NULL)));
++    gst_buffer_unref (nal);
++    return FALSE;
++  }
++
+   if (rtph264depay->need_keyframe) {
+     if (nal_type == 1) {
+       GstBitReader br = GST_BIT_READER_INIT (GST_BUFFER_DATA (nal) + 1,
+diff --git a/gst/rtp/gstrtph264depay.h b/gst/rtp/gstrtph264depay.h
+index 4533c2f..682434c 100644
+--- a/gst/rtp/gstrtph264depay.h
++++ b/gst/rtp/gstrtph264depay.h
+@@ -59,6 +59,8 @@ struct _GstRtpH264Depay
+ 
+   /* misc */
+   gboolean    need_keyframe;
++  gboolean    have_sps;
++  gboolean    have_pps;
+ };
+ 
+ struct _GstRtpH264DepayClass

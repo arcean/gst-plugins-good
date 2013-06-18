@@ -1,0 +1,26 @@
+From 2cfd8582be6123b0e0ac440c34665b60542ade58 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Mon, 1 Aug 2011 08:35:01 +0200
+Subject: [PATCH] rtpsession: trigger reconsideration if rtcp interval set
+
+---
+ gst/rtpmanager/rtpsession.c |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/gst/rtpmanager/rtpsession.c b/gst/rtpmanager/rtpsession.c
+index 4852bdb..6056d09 100644
+--- a/gst/rtpmanager/rtpsession.c
++++ b/gst/rtpmanager/rtpsession.c
+@@ -648,6 +648,12 @@ rtp_session_set_property (GObject * object, guint prop_id,
+     case PROP_RTCP_MIN_INTERVAL:
+       rtp_stats_set_min_interval (&sess->stats,
+           (gdouble) g_value_get_uint64 (value) / GST_SECOND);
++      /* trigger reconsideration */
++      RTP_SESSION_LOCK (sess);
++      sess->next_rtcp_check_time = 0;
++      RTP_SESSION_UNLOCK (sess);
++      if (sess->callbacks.reconsider)
++        sess->callbacks.reconsider (sess, sess->reconsider_user_data);
+       break;
+     default:
+       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);

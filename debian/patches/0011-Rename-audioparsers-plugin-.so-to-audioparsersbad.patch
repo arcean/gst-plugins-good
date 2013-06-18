@@ -1,0 +1,41 @@
+From abe01c61a695fcce63c5735f8d96ce2917a765ba Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Stadler?= <rene.stadler@nokia.com>
+Date: Wed, 20 Apr 2011 15:11:55 +0300
+Subject: [PATCH] Rename audioparsers plugin .so to audioparsersbad
+
+A temporary measure to ease the transition from the audio parsers
+plugin in gst-plugins-bad. This way, we can cleanly overwrite the
+actual -bad one on the packaging level.
+---
+ gst/audioparsers/Makefile.am |   12 ++++++------
+ 1 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/gst/audioparsers/Makefile.am b/gst/audioparsers/Makefile.am
+index 22bc81f..46bf7d6 100644
+--- a/gst/audioparsers/Makefile.am
++++ b/gst/audioparsers/Makefile.am
+@@ -1,18 +1,18 @@
+-plugin_LTLIBRARIES = libgstaudioparsers.la
++plugin_LTLIBRARIES = libgstaudioparsersbad.la
+ 
+-libgstaudioparsers_la_SOURCES = \
++libgstaudioparsersbad_la_SOURCES = \
+ 	gstaacparse.c gstamrparse.c gstac3parse.c \
+ 	gstdcaparse.c gstflacparse.c gstmpegaudioparse.c \
+ 	plugin.c
+ 
+-libgstaudioparsers_la_CFLAGS = \
++libgstaudioparsersbad_la_CFLAGS = \
+ 	$(GST_PLUGINS_BASE_CFLAGS) $(GST_BASE_CFLAGS) $(GST_CFLAGS)
+-libgstaudioparsers_la_LIBADD = \
++libgstaudioparsersbad_la_LIBADD = \
+ 	$(GST_PLUGINS_BASE_LIBS) -lgsttag-$(GST_MAJORMINOR) \
+ 	-lgstaudio-$(GST_MAJORMINOR) \
+ 	$(GST_BASE_LIBS) $(GST_LIBS)
+-libgstaudioparsers_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
+-libgstaudioparsers_la_LIBTOOLFLAGS = --tag=disable-static
++libgstaudioparsersbad_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
++libgstaudioparsersbad_la_LIBTOOLFLAGS = --tag=disable-static
+ 
+ noinst_HEADERS = gstaacparse.h gstamrparse.h gstac3parse.h \
+ 	gstdcaparse.h gstflacparse.h gstmpegaudioparse.h

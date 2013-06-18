@@ -1,0 +1,24 @@
+From 4b1c98c0ac89dd8885f84ba4309a30e5e10dfd81 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Stadler?= <rene.stadler@nokia.com>
+Date: Fri, 3 Dec 2010 13:53:24 +0200
+Subject: [PATCH] notqtdemux: disable rtpxqtdepay element
+
+---
+ gst/isomp4/isomp4-plugin.c |    4 ----
+ 1 files changed, 0 insertions(+), 4 deletions(-)
+
+diff --git a/gst/isomp4/isomp4-plugin.c b/gst/isomp4/isomp4-plugin.c
+index 12da875..c40a81b 100644
+--- a/gst/isomp4/isomp4-plugin.c
++++ b/gst/isomp4/isomp4-plugin.c
+@@ -55,10 +55,6 @@ plugin_init (GstPlugin * plugin)
+           GST_RANK_PRIMARY - 1, GST_TYPE_QTDEMUX))
+     return FALSE;
+ 
+-  if (!gst_element_register (plugin, "rtpxqtdepay",
+-          GST_RANK_MARGINAL, GST_TYPE_RTP_XQT_DEPAY))
+-    return FALSE;
+-
+   if (!gst_qt_mux_register (plugin))
+     return FALSE;
+   if (!gst_qt_moov_recover_register (plugin))

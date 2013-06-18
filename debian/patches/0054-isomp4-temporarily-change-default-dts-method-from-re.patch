@@ -1,0 +1,22 @@
+From 84ee3f27ec497443ca64e5e8b98dc2a7bc40393a Mon Sep 17 00:00:00 2001
+From: Lasse Laukkanen <lasse.laukkanen@digia.com>
+Date: Tue, 13 Sep 2011 14:18:55 +0300
+Subject: [PATCH] isomp4: temporarily change default dts method from reorder to dd
+
+---
+ gst/isomp4/gstqtmux.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/gst/isomp4/gstqtmux.c b/gst/isomp4/gstqtmux.c
+index 06b5bf6..e6a5dd2 100644
+--- a/gst/isomp4/gstqtmux.c
++++ b/gst/isomp4/gstqtmux.c
+@@ -204,7 +204,7 @@ enum
+ #define DEFAULT_MOOV_RECOV_FILE         NULL
+ #define DEFAULT_FRAGMENT_DURATION       0
+ #define DEFAULT_STREAMABLE              FALSE
+-#define DEFAULT_DTS_METHOD              DTS_METHOD_REORDER
++#define DEFAULT_DTS_METHOD              DTS_METHOD_DD
+ 
+ 
+ static void gst_qt_mux_finalize (GObject * object);

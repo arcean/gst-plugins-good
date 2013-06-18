@@ -1,0 +1,5 @@
+gstreamer0.10-plugins-good-doc_0.10.29-0maemo24+0m8_all.deb doc optional
+gstreamer0.10-plugins-good_0.10.29-0maemo24+0m8_armel.deb libs optional
+gstreamer0.10-plugins-good-dbg_0.10.29-0maemo24+0m8_armel.deb libdevel extra
+gstreamer0.10-plugins-good-extra_0.10.29-0maemo24+0m8_armel.deb libs optional
+gstreamer0.10-plugins-good-extra-dbg_0.10.29-0maemo24+0m8_armel.deb libdevel extra

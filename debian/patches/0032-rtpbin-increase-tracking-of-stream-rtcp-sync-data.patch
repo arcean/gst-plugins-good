@@ -1,0 +1,36 @@
+From aac692553fe14c2315b2a99654bb0f6281d5bda8 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Tue, 2 Aug 2011 13:47:17 +0200
+Subject: [PATCH] rtpbin: increase tracking of stream rtcp sync data
+
+... which should promote using data obtained from first rtcp sync packet
+to perform stream sync.
+---
+ gst/rtpmanager/gstrtpbin.c |    7 ++++++-
+ 1 files changed, 6 insertions(+), 1 deletions(-)
+
+diff --git a/gst/rtpmanager/gstrtpbin.c b/gst/rtpmanager/gstrtpbin.c
+index 6dea40c..f7467bb 100644
+--- a/gst/rtpmanager/gstrtpbin.c
++++ b/gst/rtpmanager/gstrtpbin.c
+@@ -1105,7 +1105,7 @@ gst_rtp_bin_associate (GstRtpBin * bin, GstRtpBinStream * stream, guint8 len,
+     stream->rt_delta = rtdiff - ntpdiff;
+ 
+     stream_set_ts_offset (bin, stream, stream->rt_delta);
+-  } else if (client->nstreams > 1) {
++  } else {
+     gint64 min, rtp_min, clock_base;
+     gboolean all_sync, use_rtp;
+ 
+@@ -1140,6 +1140,11 @@ gst_rtp_bin_associate (GstRtpBin * bin, GstRtpBinStream * stream, guint8 len,
+      * e.g. post-seek */
+     all_sync = (stream->clock_base == clock_base);
+     stream->clock_base = clock_base;
++
++    /* may need init performed above later on, but nothing more to do now */
++    if (client->nstreams <= 1)
++      return;
++
+     for (walk = client->streams; walk; walk = g_slist_next (walk)) {
+       GstRtpBinStream *ostream = (GstRtpBinStream *) walk->data;
+ 

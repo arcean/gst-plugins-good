@@ -1,0 +1,122 @@
+From 8c8dab963e81c80d5ecea1814bc9e724057e9311 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Olivier=20Cr=C3=AAte?= <olivier.crete@collabora.com>
+Date: Thu, 16 Jun 2011 19:34:52 -0400
+Subject: [PATCH] rtph264depay: Request new keyframe on any lost frame
+
+Any time we have a discont, request a new keyframe
+
+MAEMO SPECIFIC: Do not merge upstream
+---
+ gst/rtp/gstrtph264depay.c |   49 +++++++++++++++++++++++++++++++++++++++++++++
+ gst/rtp/gstrtph264depay.h |    3 ++
+ 2 files changed, 52 insertions(+), 0 deletions(-)
+
+diff --git a/gst/rtp/gstrtph264depay.c b/gst/rtp/gstrtph264depay.c
+index 31ba573..384a68b 100644
+--- a/gst/rtp/gstrtph264depay.c
++++ b/gst/rtp/gstrtph264depay.c
+@@ -24,6 +24,7 @@
+ #include <stdio.h>
+ #include <string.h>
+ 
++#include <gst/base/gstbitreader.h>
+ #include <gst/rtp/gstrtpbuffer.h>
+ #include "gstrtph264depay.h"
+ 
+@@ -157,6 +158,7 @@ gst_rtp_h264_depay_init (GstRtpH264Depay * rtph264depay,
+   rtph264depay->picture_adapter = gst_adapter_new ();
+   rtph264depay->byte_stream = DEFAULT_BYTE_STREAM;
+   rtph264depay->merge = DEFAULT_ACCESS_UNIT;
++  rtph264depay->need_keyframe = TRUE;
+ }
+ 
+ static void
+@@ -168,6 +170,7 @@ gst_rtp_h264_depay_reset (GstRtpH264Depay * rtph264depay)
+   rtph264depay->picture_start = FALSE;
+   rtph264depay->last_keyframe = FALSE;
+   rtph264depay->last_ts = 0;
++  rtph264depay->need_keyframe = TRUE;
+ }
+ 
+ static void
+@@ -501,6 +504,31 @@ gst_rtp_h264_complete_au (GstRtpH264Depay * rtph264depay,
+   return outbuf;
+ }
+ 
++/* Stolen from bad/gst/mpegtsdemux/payloader_parsers.c */
++/* variable length Exp-Golomb parsing according to H.264 spec 9.1*/
++static gboolean
++read_golomb (GstBitReader * br, guint32 * value)
++{
++  guint8 b, leading_zeros = -1;
++  *value = 1;
++
++  for (b = 0; !b; leading_zeros++) {
++    if (!gst_bit_reader_get_bits_uint8 (br, &b, 1))
++      return FALSE;
++    *value *= 2;
++  }
++
++  *value = (*value >> 1) - 1;
++  if (leading_zeros > 0) {
++    guint32 tmp = 0;
++    if (!gst_bit_reader_get_bits_uint32 (br, &tmp, leading_zeros))
++      return FALSE;
++    *value += tmp;
++  }
++
++  return TRUE;
++}
++
+ /* SPS/PPS/IDR considered key, all others DELTA;
+  * so downstream waiting for keyframe can pick up at SPS/PPS/IDR */
+ #define NAL_TYPE_IS_KEY(nt) (((nt) == 5) || ((nt) == 7) || ((nt) == 8))
+@@ -531,6 +559,26 @@ gst_rtp_h264_depay_handle_nal (GstRtpH264Depay * rtph264depay, GstBuffer * nal,
+   out_keyframe = keyframe;
+   out_timestamp = in_timestamp;
+ 
++  if (rtph264depay->need_keyframe) {
++    if (nal_type == 1) {
++      GstBitReader br = GST_BIT_READER_INIT (GST_BUFFER_DATA (nal) + 1,
++          GST_BUFFER_SIZE (nal) - 1);
++      guint32 first_mb_in_slice;
++      guint32 slice_type;
++
++      if (read_golomb (&br, &first_mb_in_slice) &&
++          read_golomb (&br, &slice_type) && slice_type == 1) {
++        rtph264depay->need_keyframe = FALSE;
++      }
++    } else if (nal_type == 5) {
++      rtph264depay->need_keyframe = FALSE;
++    } else if (nal_type != 7 && nal_type != 8) {
++      gst_pad_push_event (GST_BASE_RTP_DEPAYLOAD_SINKPAD (depayload),
++          gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM,
++              gst_structure_new ("GstForceKeyUnit", NULL)));
++    }
++  }
++
+   if (rtph264depay->merge) {
+     gboolean start = FALSE, complete = FALSE;
+ 
+@@ -619,6 +667,7 @@ gst_rtp_h264_depay_process (GstBaseRTPDepayload * depayload, GstBuffer * buf)
+   if (GST_BUFFER_IS_DISCONT (buf)) {
+     gst_adapter_clear (rtph264depay->adapter);
+     rtph264depay->wait_start = TRUE;
++    rtph264depay->need_keyframe = TRUE;
+   }
+ 
+   {
+diff --git a/gst/rtp/gstrtph264depay.h b/gst/rtp/gstrtph264depay.h
+index e801f1f..4533c2f 100644
+--- a/gst/rtp/gstrtph264depay.h
++++ b/gst/rtp/gstrtph264depay.h
+@@ -56,6 +56,9 @@ struct _GstRtpH264Depay
+   gboolean    picture_start;
+   GstClockTime last_ts;
+   gboolean    last_keyframe;
++
++  /* misc */
++  gboolean    need_keyframe;
+ };
+ 
+ struct _GstRtpH264DepayClass

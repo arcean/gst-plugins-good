@@ -1,0 +1,56 @@
+From 88b0f8c76b6661cc5c2d2d55de10c4fec5e995e3 Mon Sep 17 00:00:00 2001
+From: Robert Swain <robert.swain@collabora.co.uk>
+Date: Wed, 30 Nov 2011 11:49:55 +0100
+Subject: [PATCH] qtmux: Relax _set_caps old vs new caps check
+
+This is to allow profile/level caps to disappear and reappear. This
+is not technically the ideal solution (mpeg4videoparse should always
+be plugged such that the caps are always present). Also note that some
+optional caps could be present, be removed and become present again with
+a different value. This should not be a critical issue for GES smart
+transcoding use.
+---
+ gst/isomp4/gstqtmux.c |   24 +++++++++++++++++++++---
+ 1 files changed, 21 insertions(+), 3 deletions(-)
+
+diff --git a/gst/isomp4/gstqtmux.c b/gst/isomp4/gstqtmux.c
+index bc048cf..3d75dcd 100644
+--- a/gst/isomp4/gstqtmux.c
++++ b/gst/isomp4/gstqtmux.c
+@@ -2921,15 +2921,33 @@ gst_qt_mux_video_sink_set_caps (GstPad * pad, GstCaps * caps)
+   qtpad->prepare_buf_func = NULL;
+ 
+   /* does not go well to renegotiate stream mid-way, unless
+-   * the old caps are a subset of the new one (this means upstream
+-   * added more info to the caps, as both should be 'fixed' caps) */
++   * the old and new caps intersect (this means all caps existing
++   * in both have the same value) and the codec_data caps field was not
++   * removed in the new caps (other optional caps can appear/disappear) */
+   if (qtpad->fourcc) {
++    GstCaps *intersect_temp;
++
+     g_object_get (pad, "caps", &current_caps, NULL);
+     g_assert (caps != NULL);
+ 
+-    if (!gst_qtmux_caps_is_subset_full (qtmux, current_caps, caps)) {
++    if (!(intersect_temp = gst_caps_intersect (current_caps, caps))) {
+       goto refuse_renegotiation;
++    } else {
++      gst_caps_unref (intersect_temp);
+     }
++
++    /* check if codec_data field was present in old caps and if so that it was
++     * not removed in new caps */
++    if (GST_CAPS_IS_SIMPLE (current_caps)) {
++      structure = gst_caps_get_structure (current_caps, 0);
++      if (structure && gst_structure_has_field (structure, "codec_data")) {
++        structure = gst_caps_get_structure (caps, 0);
++        if (structure && !gst_structure_has_field (structure, "codec_data"))
++          goto refuse_renegotiation;
++      }
++      structure = NULL;
++    }
++
+     GST_DEBUG_OBJECT (qtmux,
+         "pad %s accepted renegotiation to %" GST_PTR_FORMAT " from %"
+         GST_PTR_FORMAT, GST_PAD_NAME (pad), caps, GST_PAD_CAPS (pad));

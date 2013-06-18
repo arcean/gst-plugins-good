@@ -1,0 +1,87 @@
+From 1b861b84a0bd9de824510f1d7d17d28594a82d7d Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Thu, 25 Aug 2011 12:40:52 +0200
+Subject: [PATCH] rtpsession: avoid timing out source too quickly
+
+... following a PAUSE/PLAY cycle, particularly applicable when operating
+with a short RTCP interval (possibly forced so server-side).
+---
+ gst/rtpmanager/gstrtpsession.c |    4 ++++
+ gst/rtpmanager/rtpsession.c    |   18 +++++++++++-------
+ gst/rtpmanager/rtpsession.h    |    1 +
+ 3 files changed, 16 insertions(+), 7 deletions(-)
+
+diff --git a/gst/rtpmanager/gstrtpsession.c b/gst/rtpmanager/gstrtpsession.c
+index ebeb3fd..030a9e4 100644
+--- a/gst/rtpmanager/gstrtpsession.c
++++ b/gst/rtpmanager/gstrtpsession.c
+@@ -837,6 +837,10 @@ rtcp_thread (GstRtpSession * rtpsession)
+ 
+   session = rtpsession->priv->session;
+ 
++  GST_DEBUG_OBJECT (rtpsession, "starting at %" GST_TIME_FORMAT,
++      GST_TIME_ARGS (current_time));
++  session->start_time = current_time;
++
+   while (!rtpsession->priv->stop_thread) {
+     GstClockReturn res;
+ 
+diff --git a/gst/rtpmanager/rtpsession.c b/gst/rtpmanager/rtpsession.c
+index 96a2495..1eaa93b 100644
+--- a/gst/rtpmanager/rtpsession.c
++++ b/gst/rtpmanager/rtpsession.c
+@@ -2729,6 +2729,7 @@ session_cleanup (const gchar * key, RTPSource * source, ReportData * data)
+   gboolean is_sender, is_active;
+   RTPSession *sess = data->sess;
+   GstClockTime interval;
++  GstClockTime btime;
+ 
+   is_sender = RTP_SOURCE_IS_SENDER (source);
+   is_active = RTP_SOURCE_IS_ACTIVE (source);
+@@ -2747,11 +2748,13 @@ session_cleanup (const gchar * key, RTPSource * source, ReportData * data)
+     }
+     /* sources that were inactive for more than 5 times the deterministic reporting
+      * interval get timed out. the min timeout is 5 seconds. */
+-    if (data->current_time > source->last_activity) {
++    /* mind old time that might pre-date last time going to PLAYING */
++    btime = MAX (source->last_activity, sess->start_time);
++    if (data->current_time > btime) {
+       interval = MAX (data->interval * 5, 5 * GST_SECOND);
+-      if (data->current_time - source->last_activity > interval) {
++      if (data->current_time - btime > interval) {
+         GST_DEBUG ("removing timeout source %08x, last %" GST_TIME_FORMAT,
+-            source->ssrc, GST_TIME_ARGS (source->last_activity));
++            source->ssrc, GST_TIME_ARGS (btime));
+         remove = TRUE;
+       }
+     }
+@@ -2760,12 +2763,13 @@ session_cleanup (const gchar * key, RTPSource * source, ReportData * data)
+   /* senders that did not send for a long time become a receiver, this also
+    * holds for our own source. */
+   if (is_sender) {
+-    if (data->current_time > source->last_rtp_activity) {
++    /* mind old time that might pre-date last time going to PLAYING */
++    btime = MAX (source->last_rtp_activity, sess->start_time);
++    if (data->current_time > btime) {
+       interval = MAX (data->interval * 2, 5 * GST_SECOND);
+-      if (data->current_time - source->last_rtp_activity > interval) {
++      if (data->current_time - btime > interval) {
+         GST_DEBUG ("sender source %08x timed out and became receiver, last %"
+-            GST_TIME_FORMAT, source->ssrc,
+-            GST_TIME_ARGS (source->last_rtp_activity));
++            GST_TIME_FORMAT, source->ssrc, GST_TIME_ARGS (btime));
+         source->is_sender = FALSE;
+         sess->stats.sender_sources--;
+         sendertimeout = TRUE;
+diff --git a/gst/rtpmanager/rtpsession.h b/gst/rtpmanager/rtpsession.h
+index 93fd300..d508084 100644
+--- a/gst/rtpmanager/rtpsession.h
++++ b/gst/rtpmanager/rtpsession.h
+@@ -209,6 +209,7 @@ struct _RTPSession {
+ 
+   GstClockTime  next_rtcp_check_time;
+   GstClockTime  last_rtcp_send_time;
++  GstClockTime  start_time;
+   gboolean      first_rtcp;
+   gboolean      allow_early;
+ 

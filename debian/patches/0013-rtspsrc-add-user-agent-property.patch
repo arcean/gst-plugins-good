@@ -1,0 +1,89 @@
+From 9aabb29ed0402ce788a251208e227d0a5f8af9c4 Mon Sep 17 00:00:00 2001
+From: Marco Ballesio <marco.ballesio@nokia.com>
+Date: Thu, 16 Jun 2011 15:26:59 +0300
+Subject: [PATCH] rtspsrc: add user-agent property
+
+---
+ gst/rtsp/gstrtspsrc.c |   21 +++++++++++++++++++++
+ gst/rtsp/gstrtspsrc.h |    1 +
+ 2 files changed, 22 insertions(+), 0 deletions(-)
+
+diff --git a/gst/rtsp/gstrtspsrc.c b/gst/rtsp/gstrtspsrc.c
+index e6d32ce..22d780f 100644
+--- a/gst/rtsp/gstrtspsrc.c
++++ b/gst/rtsp/gstrtspsrc.c
+@@ -194,6 +194,7 @@ enum
+   PROP_BUFFER_MODE,
+   PROP_PORT_RANGE,
+   PROP_UDP_BUFFER_SIZE,
++  PROP_USER_AGENT,
+   PROP_LAST
+ };
+ 
+@@ -456,6 +457,11 @@ gst_rtspsrc_class_init (GstRTSPSrcClass * klass)
+           0, G_MAXINT, DEFAULT_UDP_BUFFER_SIZE,
+           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+ 
++  g_object_class_install_property (gobject_class,
++      PROP_USER_AGENT,
++      g_param_spec_string ("user-agent", "user-agent",
++          "RTSP user agent", NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
++
+   gstelement_class->send_event = gst_rtspsrc_send_event;
+   gstelement_class->change_state = gst_rtspsrc_change_state;
+ 
+@@ -531,6 +537,7 @@ gst_rtspsrc_finalize (GObject * object)
+   g_free (rtspsrc->conninfo.url_str);
+   g_free (rtspsrc->user_id);
+   g_free (rtspsrc->user_pw);
++  g_free (rtspsrc->user_agent);
+ 
+   if (rtspsrc->sdp) {
+     gst_sdp_message_free (rtspsrc->sdp);
+@@ -691,6 +698,10 @@ gst_rtspsrc_set_property (GObject * object, guint prop_id, const GValue * value,
+     case PROP_UDP_BUFFER_SIZE:
+       rtspsrc->udp_buffer_size = g_value_get_int (value);
+       break;
++    case PROP_USER_AGENT:
++      g_free (rtspsrc->user_agent);
++      rtspsrc->user_agent = g_value_dup_string (value);
++      break;
+     default:
+       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+       break;
+@@ -783,6 +794,9 @@ gst_rtspsrc_get_property (GObject * object, guint prop_id, GValue * value,
+     case PROP_UDP_BUFFER_SIZE:
+       g_value_set_int (value, rtspsrc->udp_buffer_size);
+       break;
++    case PROP_USER_AGENT:
++      g_value_set_string (value, rtspsrc->user_agent);
++      break;
+     default:
+       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+       break;
+@@ -4327,6 +4341,13 @@ gst_rtspsrc_try_send (GstRTSPSrc * src, GstRTSPConnection * conn,
+ again:
+   gst_rtsp_ext_list_before_send (src->extensions, request);
+ 
++  /* the UA may have already been set by an extension, do not override it */
++  if (gst_rtsp_message_get_header (request, GST_RTSP_HDR_USER_AGENT, NULL, 0) ==
++      GST_RTSP_ENOTIMPL && src->user_agent) {
++    gst_rtsp_message_add_header (request, GST_RTSP_HDR_USER_AGENT,
++        src->user_agent);
++  }
++
+   GST_DEBUG_OBJECT (src, "sending message");
+ 
+   if (src->debug)
+diff --git a/gst/rtsp/gstrtspsrc.h b/gst/rtsp/gstrtspsrc.h
+index 460f29a..e30cb8d 100644
+--- a/gst/rtsp/gstrtspsrc.h
++++ b/gst/rtsp/gstrtspsrc.h
+@@ -219,6 +219,7 @@ struct _GstRTSPSrc {
+   gint              buffer_mode;
+   GstRTSPRange      client_port_range;
+   gint              udp_buffer_size;
++  gchar            *user_agent;
+ 
+   /* state */
+   GstRTSPState       state;

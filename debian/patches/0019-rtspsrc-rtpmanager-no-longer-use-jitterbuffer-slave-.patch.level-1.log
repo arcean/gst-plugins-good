@@ -1,0 +1,2 @@
+patching file gst/rtpmanager/rtpjitterbuffer.c
+patching file gst/rtsp/gstrtspsrc.c

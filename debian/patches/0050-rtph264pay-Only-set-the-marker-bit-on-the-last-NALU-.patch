@@ -1,0 +1,163 @@
+From f43ad652f4a8e73767ca865a4c4d926e77bfcf39 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Olivier=20Cr=C3=AAte?= <olivier.crete@collabora.com>
+Date: Mon, 18 Jul 2011 20:27:38 -0400
+Subject: [PATCH] rtph264pay: Only set the marker bit on the last NALU of a multi-NALU access unit
+
+An access unit could contain multiple NAL units, in that case, only the last
+RTP packet of the last NALU should have its marker bit set.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=654850
+---
+ gst/rtp/gstrtph264pay.c |   44 ++++++++++++++++++++++++++++++++++++--------
+ gst/rtp/gstrtph264pay.h |    1 +
+ 2 files changed, 37 insertions(+), 8 deletions(-)
+
+diff --git a/gst/rtp/gstrtph264pay.c b/gst/rtp/gstrtph264pay.c
+index 15b0470..287a188 100644
+--- a/gst/rtp/gstrtph264pay.c
++++ b/gst/rtp/gstrtph264pay.c
+@@ -298,6 +298,7 @@ gst_rtp_h264_pay_setcaps (GstBaseRTPPayload * basepayload, GstCaps * caps)
+   const GValue *value;
+   guint8 *data;
+   guint size;
++  const gchar *alignment;
+ 
+   rtph264pay = GST_RTP_H264_PAY (basepayload);
+ 
+@@ -307,6 +308,12 @@ gst_rtp_h264_pay_setcaps (GstBaseRTPPayload * basepayload, GstCaps * caps)
+    * NALs */
+   gst_basertppayload_set_options (basepayload, "video", TRUE, "H264", 90000);
+ 
++  alignment = gst_structure_get_string (str, "alignment");
++  if (alignment && !strcmp (alignment, "au"))
++    rtph264pay->au_alignment = TRUE;
++  else
++    rtph264pay->au_alignment = FALSE;
++
+   /* packetized AVC video has a codec_data */
+   if ((value = gst_structure_get_value (str, "codec_data"))) {
+     GstBuffer *buffer;
+@@ -641,7 +648,7 @@ gst_rtp_h264_pay_decode_nal (GstRtpH264Pay * payloader,
+ static GstFlowReturn
+ gst_rtp_h264_pay_payload_nal (GstBaseRTPPayload * basepayload,
+     const guint8 * data, guint size, GstClockTime timestamp,
+-    GstBuffer * buffer_orig);
++    GstBuffer * buffer_orig, gboolean end_of_au);
+ 
+ static GstFlowReturn
+ gst_rtp_h264_pay_send_sps_pps (GstBaseRTPPayload * basepayload,
+@@ -657,7 +664,7 @@ gst_rtp_h264_pay_send_sps_pps (GstBaseRTPPayload * basepayload,
+     /* resend SPS */
+     ret = gst_rtp_h264_pay_payload_nal (basepayload,
+         GST_BUFFER_DATA (sps_buf), GST_BUFFER_SIZE (sps_buf), timestamp,
+-        sps_buf);
++        sps_buf, FALSE);
+     /* Not critical here; but throw a warning */
+     if (ret != GST_FLOW_OK)
+       GST_WARNING ("Problem pushing SPS");
+@@ -669,7 +676,7 @@ gst_rtp_h264_pay_send_sps_pps (GstBaseRTPPayload * basepayload,
+     /* resend PPS */
+     ret = gst_rtp_h264_pay_payload_nal (basepayload,
+         GST_BUFFER_DATA (pps_buf), GST_BUFFER_SIZE (pps_buf), timestamp,
+-        pps_buf);
++        pps_buf, FALSE);
+     /* Not critical here; but throw a warning */
+     if (ret != GST_FLOW_OK)
+       GST_WARNING ("Problem pushing PPS");
+@@ -684,7 +691,7 @@ gst_rtp_h264_pay_send_sps_pps (GstBaseRTPPayload * basepayload,
+ static GstFlowReturn
+ gst_rtp_h264_pay_payload_nal (GstBaseRTPPayload * basepayload,
+     const guint8 * data, guint size, GstClockTime timestamp,
+-    GstBuffer * buffer_orig)
++    GstBuffer * buffer_orig, gboolean end_of_au)
+ {
+   GstRtpH264Pay *rtph264pay;
+   GstFlowReturn ret;
+@@ -763,7 +770,7 @@ gst_rtp_h264_pay_payload_nal (GstBaseRTPPayload * basepayload,
+     }
+ 
+     /* only set the marker bit on packets containing access units */
+-    if (IS_ACCESS_UNIT (nalType)) {
++    if (IS_ACCESS_UNIT (nalType) && end_of_au) {
+       gst_rtp_buffer_set_marker (outbuf, 1);
+     }
+ 
+@@ -853,7 +860,7 @@ gst_rtp_h264_pay_payload_nal (GstBaseRTPPayload * basepayload,
+         end = 1;
+       }
+       if (IS_ACCESS_UNIT (nalType)) {
+-        gst_rtp_buffer_set_marker (outbuf, end);
++        gst_rtp_buffer_set_marker (outbuf, end && end_of_au);
+       }
+ 
+       /* FU indicator */
+@@ -953,6 +960,7 @@ gst_rtp_h264_pay_handle_buffer (GstBaseRTPPayload * basepayload,
+ 
+     while (size > nal_length_size) {
+       gint i;
++      gboolean end_of_au = FALSE;
+ 
+       nal_len = 0;
+       for (i = 0; i < nal_length_size; i++) {
+@@ -971,9 +979,16 @@ gst_rtp_h264_pay_handle_buffer (GstBaseRTPPayload * basepayload,
+             nal_len);
+       }
+ 
++      /* If we're at the end of the buffer, then we're at the end of the
++       * access unit
++       */
++      if (rtph264pay->au_alignment && size - nal_len <= nal_length_size) {
++        end_of_au = TRUE;
++      }
++
+       ret =
+           gst_rtp_h264_pay_payload_nal (basepayload, data, nal_len, timestamp,
+-          buffer);
++          buffer, end_of_au);
+       if (ret != GST_FLOW_OK)
+         break;
+ 
+@@ -1075,6 +1090,7 @@ gst_rtp_h264_pay_handle_buffer (GstBaseRTPPayload * basepayload,
+ 
+     for (i = 0; i < nal_queue->len; i++) {
+       guint size;
++      gboolean end_of_au = FALSE;
+ 
+       nal_len = g_array_index (nal_queue, guint, i);
+       /* skip start code */
+@@ -1090,10 +1106,22 @@ gst_rtp_h264_pay_handle_buffer (GstBaseRTPPayload * basepayload,
+         for (; size > 1 && data[size - 1] == 0x0; size--)
+           /* skip */ ;
+ 
++      /* If it's the last nal unit we have in non-bytestream mode, we can
++       * assume it's the end of an access-unit
++       *
++       * FIXME: We need to wait until the next packet or EOS to
++       * actually payload the NAL so we can know if the current NAL is
++       * the last one of an access unit or not if we are in bytestream mode
++       */
++      if (rtph264pay->au_alignment &&
++          rtph264pay->scan_mode != GST_H264_SCAN_MODE_BYTESTREAM &&
++          i == nal_queue->len - 1)
++        end_of_au = TRUE;
++
+       /* put the data in one or more RTP packets */
+       ret =
+           gst_rtp_h264_pay_payload_nal (basepayload, data, size, timestamp,
+-          buffer);
++          buffer, end_of_au);
+       if (ret != GST_FLOW_OK) {
+         break;
+       }
+diff --git a/gst/rtp/gstrtph264pay.h b/gst/rtp/gstrtph264pay.h
+index 19e5aaa..6303e30 100644
+--- a/gst/rtp/gstrtph264pay.h
++++ b/gst/rtp/gstrtph264pay.h
+@@ -55,6 +55,7 @@ struct _GstRtpH264Pay
+   GList *sps, *pps;
+ 
+   gboolean packetized;
++  gboolean au_alignment;
+   guint nal_length_size;
+   GArray *queue;
+ 

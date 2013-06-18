@@ -1,0 +1,4 @@
+patching file gst/isomp4/atoms.c
+patching file gst/isomp4/atoms.h
+patching file gst/isomp4/gstqtmux.c
+patching file gst/isomp4/gstqtmux.h

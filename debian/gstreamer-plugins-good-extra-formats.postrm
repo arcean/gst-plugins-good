@@ -1,0 +1,3 @@
+#!/bin/sh
+
+tracker-register-mimetype -c Videos -d video/x-matroska -d video/x-flv || echo

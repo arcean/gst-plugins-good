@@ -1,0 +1,23 @@
+From 64eada4f46484b1f1d939f0bfa44f1ba812ac0d8 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Tue, 26 Jul 2011 20:44:55 +0200
+Subject: [PATCH] rtspsrc: increase default latency to 5s
+
+... so as to cover (temporarily) for unreported/unadvisable latency.
+---
+ gst/rtsp/gstrtspsrc.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/gst/rtsp/gstrtspsrc.c b/gst/rtsp/gstrtspsrc.c
+index 61beb4e..8968105 100644
+--- a/gst/rtsp/gstrtspsrc.c
++++ b/gst/rtsp/gstrtspsrc.c
+@@ -163,7 +163,7 @@ gst_rtsp_src_buffer_mode_get_type (void)
+ #define DEFAULT_TIMEOUT          2000000
+ #define DEFAULT_UDP_BUFFER_SIZE  0x80000
+ #define DEFAULT_TCP_TIMEOUT      20000000
+-#define DEFAULT_LATENCY_MS       2000
++#define DEFAULT_LATENCY_MS       5000
+ #define DEFAULT_CONNECTION_SPEED 0
+ #define DEFAULT_NAT_METHOD       GST_RTSP_NAT_DUMMY
+ #define DEFAULT_DO_RTCP          TRUE

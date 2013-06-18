@@ -1,0 +1,59 @@
+From 724ea7e711316635e243704cc83a49df564d776a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Olivier=20Cr=C3=AAte?= <olivier.crete@collabora.com>
+Date: Fri, 2 Sep 2011 14:10:51 -0400
+Subject: [PATCH] rtph264depay: Send a counter with the GstForceKeyUnit event
+
+That counter is only incremented when an IDR is received.
+
+MAEMO SPECIFIC: Do not merge upstream
+---
+ gst/rtp/gstrtph264depay.c |   10 ++++++++--
+ gst/rtp/gstrtph264depay.h |    1 +
+ 2 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/gst/rtp/gstrtph264depay.c b/gst/rtp/gstrtph264depay.c
+index 804fde8..aca9eb9 100644
+--- a/gst/rtp/gstrtph264depay.c
++++ b/gst/rtp/gstrtph264depay.c
+@@ -572,7 +572,9 @@ gst_rtp_h264_depay_handle_nal (GstRtpH264Depay * rtph264depay, GstBuffer * nal,
+     gst_pad_push_event (GST_BASE_RTP_DEPAYLOAD_SINKPAD (depayload),
+         gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM,
+             gst_structure_new ("GstForceKeyUnit",
+-                "all-headers", G_TYPE_BOOLEAN, TRUE, NULL)));
++                "all-headers", G_TYPE_BOOLEAN, TRUE,
++                "count", G_TYPE_UINT, rtph264depay->need_keyframe_count,
++                NULL)));
+     gst_buffer_unref (nal);
+     return FALSE;
+   }
+@@ -587,13 +589,17 @@ gst_rtp_h264_depay_handle_nal (GstRtpH264Depay * rtph264depay, GstBuffer * nal,
+       if (read_golomb (&br, &first_mb_in_slice) &&
+           read_golomb (&br, &slice_type) && slice_type == 1) {
+         rtph264depay->need_keyframe = FALSE;
++        rtph264depay->need_keyframe_count++;
+       }
+     } else if (nal_type == 5) {
+       rtph264depay->need_keyframe = FALSE;
++      rtph264depay->need_keyframe_count++;
+     } else if (nal_type != 7 && nal_type != 8) {
+       gst_pad_push_event (GST_BASE_RTP_DEPAYLOAD_SINKPAD (depayload),
+           gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM,
+-              gst_structure_new ("GstForceKeyUnit", NULL)));
++              gst_structure_new ("GstForceKeyUnit",
++                  "count", G_TYPE_UINT, rtph264depay->need_keyframe_count,
++                  NULL)));
+     }
+   }
+ 
+diff --git a/gst/rtp/gstrtph264depay.h b/gst/rtp/gstrtph264depay.h
+index 682434c..ee37ee8 100644
+--- a/gst/rtp/gstrtph264depay.h
++++ b/gst/rtp/gstrtph264depay.h
+@@ -59,6 +59,7 @@ struct _GstRtpH264Depay
+ 
+   /* misc */
+   gboolean    need_keyframe;
++  guint       need_keyframe_count;
+   gboolean    have_sps;
+   gboolean    have_pps;
+ };

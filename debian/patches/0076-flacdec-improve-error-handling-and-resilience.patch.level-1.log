@@ -1,0 +1,2 @@
+patching file ext/flac/gstflacdec.c
+patching file ext/flac/gstflacdec.h

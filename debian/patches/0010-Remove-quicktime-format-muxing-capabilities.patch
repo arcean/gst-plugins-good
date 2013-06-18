@@ -1,0 +1,168 @@
+From e36f8bbb73668ea6a4dc45373de7b4f15ec9db77 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Stadler?= <rene.stadler@nokia.com>
+Date: Thu, 28 Apr 2011 16:47:31 +0300
+Subject: [PATCH] Remove quicktime format muxing capabilities
+
+---
+ gst/isomp4/gstqtmux.c    |   32 ++++----------------------------
+ gst/isomp4/gstqtmuxmap.c |   42 +-----------------------------------------
+ gst/isomp4/gstqtmuxmap.h |    1 -
+ 3 files changed, 5 insertions(+), 70 deletions(-)
+
+diff --git a/gst/isomp4/gstqtmux.c b/gst/isomp4/gstqtmux.c
+index 530c611..fac0738 100644
+--- a/gst/isomp4/gstqtmux.c
++++ b/gst/isomp4/gstqtmux.c
+@@ -1028,12 +1028,7 @@ gst_qt_mux_add_xmp_tags (GstQTMux * qtmux, const GstTagList * list)
+ 
+   GST_DEBUG_OBJECT (qtmux, "Adding xmp tags");
+ 
+-  if (qtmux_klass->format == GST_QT_MUX_FORMAT_QT) {
+-    xmp = gst_tag_xmp_writer_tag_list_to_xmp_buffer (GST_TAG_XMP_WRITER (qtmux),
+-        list, TRUE);
+-    if (xmp)
+-      atom_moov_add_xmp_tags (qtmux->moov, xmp);
+-  } else {
++  {
+     AtomInfo *ainfo;
+     /* for isom/mp4, it is a top level uuid atom */
+     xmp = gst_tag_xmp_writer_tag_list_to_xmp_buffer (GST_TAG_XMP_WRITER (qtmux),
+@@ -2576,11 +2571,6 @@ gst_qt_mux_audio_sink_set_caps (GstPad * pad, GstCaps * caps)
+   entry.channels = channels;
+   /* default */
+   entry.sample_size = 16;
+-  /* this is the typical compressed case */
+-  if (format == GST_QT_MUX_FORMAT_QT) {
+-    entry.version = 1;
+-    entry.compression_id = -2;
+-  }
+ 
+   /* now map onto a fourcc, and some extra properties */
+   if (strcmp (mimetype, "audio/mpeg") == 0) {
+@@ -2593,11 +2583,7 @@ gst_qt_mux_audio_sink_set_caps (GstPad * pad, GstCaps * caps)
+         gst_structure_get_int (structure, "layer", &layer);
+         switch (layer) {
+           case 3:
+-            /* mp3 */
+-            /* note: QuickTime player does not like mp3 either way in iso/mp4 */
+-            if (format == GST_QT_MUX_FORMAT_QT)
+-              entry.fourcc = FOURCC__mp3;
+-            else {
++            {
+               entry.fourcc = FOURCC_mp4a;
+               ext_atom =
+                   build_esds_extension (qtpad->trak, ESDS_OBJECT_TYPE_MPEG1_P3,
+@@ -2639,10 +2625,6 @@ gst_qt_mux_audio_sink_set_caps (GstPad * pad, GstCaps * caps)
+         /* AAC */
+         entry.fourcc = FOURCC_mp4a;
+ 
+-        if (format == GST_QT_MUX_FORMAT_QT)
+-          ext_atom = build_mov_aac_extension (qtpad->trak, codec_data,
+-              qtpad->avg_bitrate, qtpad->max_bitrate);
+-        else
+           ext_atom =
+               build_esds_extension (qtpad->trak, ESDS_OBJECT_TYPE_MPEG4_P3,
+               ESDS_STREAM_TYPE_AUDIO, codec_data, qtpad->avg_bitrate,
+@@ -2772,10 +2754,7 @@ gst_qt_mux_audio_sink_set_caps (GstPad * pad, GstCaps * caps)
+       /* does not look good, but perhaps some trailing unneeded stuff */
+       GST_WARNING_OBJECT (qtmux, "unexpected codec-data size, possibly broken");
+     }
+-    if (format == GST_QT_MUX_FORMAT_QT)
+-      ext_atom = build_mov_alac_extension (qtpad->trak, codec_config);
+-    else
+-      ext_atom = build_codec_data_extension (FOURCC_alac, codec_config);
++    ext_atom = build_codec_data_extension (FOURCC_alac, codec_config);
+     /* set some more info */
+     entry.bytes_per_sample = 2;
+     entry.samples_per_packet =
+@@ -2946,10 +2925,7 @@ gst_qt_mux_video_sink_set_caps (GstPad * pad, GstCaps * caps)
+     }
+   } else if (strcmp (mimetype, "video/x-h263") == 0) {
+     ext_atom = NULL;
+-    if (format == GST_QT_MUX_FORMAT_QT)
+-      entry.fourcc = FOURCC_h263;
+-    else
+-      entry.fourcc = FOURCC_s263;
++    entry.fourcc = FOURCC_s263;
+     ext_atom = build_h263_extension ();
+     if (ext_atom != NULL)
+       ext_atom_list = g_list_prepend (ext_atom_list, ext_atom);
+diff --git a/gst/isomp4/gstqtmuxmap.c b/gst/isomp4/gstqtmuxmap.c
+index c3a0295..6c8ec9e 100644
+--- a/gst/isomp4/gstqtmuxmap.c
++++ b/gst/isomp4/gstqtmuxmap.c
+@@ -144,39 +144,6 @@
+ 
+ /* FIXME 0.11 - take a look at bugs #580005 and #340375 */
+ GstQTMuxFormatProp gst_qt_mux_format_list[] = {
+-  /* original QuickTime format; see Apple site (e.g. qtff.pdf) */
+-  {
+-        GST_QT_MUX_FORMAT_QT,
+-        GST_RANK_PRIMARY,
+-        "qtmux",
+-        "QuickTime",
+-        "GstQTMux",
+-        GST_STATIC_CAPS ("video/quicktime, variant = (string) apple; "
+-            "video/quicktime"),
+-        GST_STATIC_CAPS ("video/x-raw-rgb, "
+-            COMMON_VIDEO_CAPS "; "
+-            "video/x-raw-yuv, "
+-            "format = (fourcc) UYVY, "
+-            COMMON_VIDEO_CAPS "; "
+-            MPEG4V_CAPS "; "
+-            H263_CAPS "; "
+-            H264_CAPS "; "
+-            SVQ_CAPS "; "
+-            "video/x-dv, "
+-            "systemstream = (boolean) false, "
+-            COMMON_VIDEO_CAPS "; "
+-            "image/jpeg, "
+-            COMMON_VIDEO_CAPS_NO_FRAMERATE "; "
+-            "video/x-vp8, "
+-            COMMON_VIDEO_CAPS "; " "video/x-qt-part, " COMMON_VIDEO_CAPS),
+-        GST_STATIC_CAPS (PCM_CAPS_FULL "; "
+-            MP3_CAPS " ; "
+-            AAC_CAPS " ; "
+-            ADPCM_CAPS " ; "
+-            "audio/x-alaw, " COMMON_AUDIO_CAPS (2, MAX) "; "
+-            AMR_CAPS " ; " ALAC_CAPS)
+-      }
+-  ,
+   /* ISO 14496-14: mp42 as ISO base media extension
+    * (supersedes original ISO 144996-1 mp41) */
+   {
+@@ -254,9 +221,7 @@ GstQTMuxFormatProp gst_qt_mux_format_list[] = {
+ AtomsTreeFlavor
+ gst_qt_mux_map_format_to_flavor (GstQTMuxFormat format)
+ {
+-  if (format == GST_QT_MUX_FORMAT_QT)
+-    return ATOMS_TREE_FLAVOR_MOV;
+-  else if (format == GST_QT_MUX_FORMAT_3GP)
++  if (format == GST_QT_MUX_FORMAT_3GP)
+     return ATOMS_TREE_FLAVOR_3GP;
+   else if (format == GST_QT_MUX_FORMAT_ISML)
+     return ATOMS_TREE_FLAVOR_ISML;
+@@ -321,11 +286,6 @@ gst_qt_mux_map_format_to_header (GstQTMuxFormat format, GstBuffer ** _prefix,
+   g_return_if_fail (_compatible != NULL);
+ 
+   switch (format) {
+-    case GST_QT_MUX_FORMAT_QT:
+-      major = FOURCC_qt__;
+-      comp = qt_brands;
+-      version = 0x20050300;
+-      break;
+     case GST_QT_MUX_FORMAT_MP4:
+       major = FOURCC_mp42;
+       comp = mp4_brands;
+diff --git a/gst/isomp4/gstqtmuxmap.h b/gst/isomp4/gstqtmuxmap.h
+index f069a2f..bfbcfce 100644
+--- a/gst/isomp4/gstqtmuxmap.h
++++ b/gst/isomp4/gstqtmuxmap.h
+@@ -52,7 +52,6 @@
+ typedef enum _GstQTMuxFormat
+ {
+   GST_QT_MUX_FORMAT_NONE = 0,
+-  GST_QT_MUX_FORMAT_QT,
+   GST_QT_MUX_FORMAT_MP4,
+   GST_QT_MUX_FORMAT_3GP,
+   GST_QT_MUX_FORMAT_MJ2,

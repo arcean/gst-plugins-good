@@ -1,0 +1,87 @@
+From 6e8884c02d4d38ca7a33235a3aba68f09404cfb5 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Tue, 2 Aug 2011 13:23:47 +0200
+Subject: [PATCH] rtpjitterbuffer: drop old packets
+
+... where old is defined as those (estimated) belonging to pre-flush situation.
+This facilitates dropping delayed/stray packets following an rtsp seek.
+---
+ gst/rtpmanager/gstrtpjitterbuffer.c |   30 ++++++++++++++++++++++++++++++
+ 1 files changed, 30 insertions(+), 0 deletions(-)
+
+diff --git a/gst/rtpmanager/gstrtpjitterbuffer.c b/gst/rtpmanager/gstrtpjitterbuffer.c
+index 5adf074..310ade4 100644
+--- a/gst/rtpmanager/gstrtpjitterbuffer.c
++++ b/gst/rtpmanager/gstrtpjitterbuffer.c
+@@ -149,6 +149,10 @@ struct _GstRtpJitterBufferPrivate
+   GstClockTime last_out_time;
+   /* the next expected seqnum we receive */
+   guint32 next_in_seqnum;
++  /* duplicates above, but not reset on flush */
++  guint32 old_in_seqnum;
++  /* expected base seqnum */
++  guint32 base_seqnum;
+ 
+   /* start and stop ranges */
+   GstClockTime npt_start;
+@@ -802,6 +806,8 @@ gst_jitter_buffer_sink_parse_caps (GstRtpJitterBuffer * jitterbuffer,
+     /* first expected seqnum, only update when we didn't have a previous base. */
+     if (priv->next_in_seqnum == -1)
+       priv->next_in_seqnum = val;
++    if (priv->base_seqnum == -1)
++      priv->base_seqnum = val;
+     if (priv->next_seqnum == -1)
+       priv->next_seqnum = val;
+   }
+@@ -901,6 +907,7 @@ gst_rtp_jitter_buffer_flush_stop (GstRtpJitterBuffer * jitterbuffer)
+   priv->last_out_time = -1;
+   priv->next_seqnum = -1;
+   priv->next_in_seqnum = -1;
++  priv->base_seqnum = -1;
+   priv->clock_rate = -1;
+   priv->eos = FALSE;
+   priv->estimated_eos = -1;
+@@ -1360,6 +1367,19 @@ gst_rtp_jitter_buffer_chain (GstPad * pad, GstBuffer * buffer)
+       } else {
+         GST_DEBUG_OBJECT (jitterbuffer, "tolerable gap");
+       }
++      /* maybe it's an old stray packet, e.g. following seek */
++      if (priv->base_seqnum != -1) {
++        gint ogap;
++
++        ogap = gst_rtp_buffer_compare_seqnum (priv->old_in_seqnum, seqnum);
++        if ((ABS (ogap) <= ABS (gap) / 2) && (ABS (ogap) < RTP_MAX_MISORDER)) {
++          /* so we are pretty close(r) to where we were, then expected now */
++          GST_DEBUG_OBJECT (jitterbuffer,
++              "previously expected #%d, got #%d, gap of %d; discarding packet",
++              priv->old_in_seqnum, seqnum, gap);
++          goto old_packet;
++        }
++      }
+     }
+     if (G_UNLIKELY (reset)) {
+       GST_DEBUG_OBJECT (jitterbuffer, "flush and reset jitterbuffer");
+@@ -1370,6 +1390,9 @@ gst_rtp_jitter_buffer_chain (GstPad * pad, GstBuffer * buffer)
+     }
+   }
+   priv->next_in_seqnum = (seqnum + 1) & 0xffff;
++  priv->old_in_seqnum = priv->next_in_seqnum;
++  /* accepted this, we'll have to deal with these as of now */
++  priv->base_seqnum = -1;
+ 
+   /* let's check if this buffer is too late, we can only accept packets with
+    * bigger seqnum than the one we last pushed. */
+@@ -1489,6 +1512,13 @@ duplicate:
+     gst_buffer_unref (buffer);
+     goto finished;
+   }
++old_packet:
++  {
++    GST_WARNING_OBJECT (jitterbuffer, "Old packet #%d detected, dropping",
++        seqnum);
++    gst_buffer_unref (buffer);
++    goto finished;
++  }
+ }
+ 
+ static GstClockTime

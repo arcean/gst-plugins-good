@@ -1,0 +1,87 @@
+From d00112456600c549ee3185559c679e7a693a3c6e Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Mon, 19 Mar 2012 12:01:40 +0100
+Subject: [PATCH] flacparse: perform additional frame crc check if applicable
+
+... such as a frame header parsing throwing some suspicious warnings.
+So we can be a bit more convinced we determine the right frame end.
+---
+ gst/audioparsers/gstflacparse.c |   23 +++++++++++++++++------
+ 1 files changed, 17 insertions(+), 6 deletions(-)
+
+diff --git a/gst/audioparsers/gstflacparse.c b/gst/audioparsers/gstflacparse.c
+index d09c038..7a932b8 100644
+--- a/gst/audioparsers/gstflacparse.c
++++ b/gst/audioparsers/gstflacparse.c
+@@ -376,7 +376,8 @@ typedef enum
+ 
+ static FrameHeaderCheckReturn
+ gst_flac_parse_frame_header_is_valid (GstFlacParse * flacparse,
+-    const guint8 * data, guint size, gboolean set, guint16 * block_size_ret)
++    const guint8 * data, guint size, gboolean set, guint16 * block_size_ret,
++    gboolean * suspect)
+ {
+   GstBitReader reader = GST_BIT_READER_INIT (data, size);
+   guint8 blocking_strategy;
+@@ -570,6 +571,8 @@ gst_flac_parse_frame_header_is_valid (GstFlacParse * flacparse,
+         /* TODO: can we know we're on the last frame, to avoid warning ? */
+         GST_WARNING_OBJECT (flacparse, "Block size is not constant");
+         block_size = flacparse->block_size;
++        if (suspect)
++          *suspect = TRUE;
+       }
+     }
+   }
+@@ -618,6 +621,7 @@ gst_flac_parse_frame_is_valid (GstFlacParse * flacparse,
+   guint i, search_start, search_end;
+   FrameHeaderCheckReturn header_ret;
+   guint16 block_size;
++  gboolean suspect_start = FALSE, suspect_end = FALSE;
+ 
+   buffer = frame->buffer;
+   data = GST_BUFFER_DATA (buffer);
+@@ -628,7 +632,7 @@ gst_flac_parse_frame_is_valid (GstFlacParse * flacparse,
+ 
+   header_ret =
+       gst_flac_parse_frame_header_is_valid (flacparse, data, size, TRUE,
+-      &block_size);
++      &block_size, &suspect_start);
+   if (header_ret == FRAME_HEADER_INVALID) {
+     *ret = 0;
+     return FALSE;
+@@ -648,16 +652,23 @@ gst_flac_parse_frame_is_valid (GstFlacParse * flacparse,
+ 
+   for (i = search_start; i < search_end; i++, remaining--) {
+     if ((GST_READ_UINT16_BE (data + i) & 0xfffe) == 0xfff8) {
++      GST_LOG_OBJECT (flacparse, "possible frame end at offset %d", i);
++      suspect_end = FALSE;
+       header_ret =
+           gst_flac_parse_frame_header_is_valid (flacparse, data + i, remaining,
+-          FALSE, NULL);
++          FALSE, NULL, &suspect_end);
+       if (header_ret == FRAME_HEADER_VALID) {
+-        if (flacparse->check_frame_checksums) {
++        if (flacparse->check_frame_checksums || suspect_start || suspect_end) {
+           guint16 actual_crc = gst_flac_calculate_crc16 (data, i - 2);
+           guint16 expected_crc = GST_READ_UINT16_BE (data + i - 2);
+ 
+-          if (actual_crc != expected_crc)
++          GST_LOG_OBJECT (flacparse,
++              "checking checksum, frame suspect (%d, %d)",
++              suspect_start, suspect_end);
++          if (actual_crc != expected_crc) {
++            GST_DEBUG_OBJECT (flacparse, "checksum did not match");
+             continue;
++          }
+         }
+         *ret = i;
+         flacparse->block_size = block_size;
+@@ -1319,7 +1330,7 @@ gst_flac_parse_parse_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
+       flacparse->offset = GST_BUFFER_OFFSET (buffer);
+       ret =
+           gst_flac_parse_frame_header_is_valid (flacparse,
+-          GST_BUFFER_DATA (buffer), GST_BUFFER_SIZE (buffer), TRUE, NULL);
++          GST_BUFFER_DATA (buffer), GST_BUFFER_SIZE (buffer), TRUE, NULL, NULL);
+       if (ret != FRAME_HEADER_VALID) {
+         GST_ERROR_OBJECT (flacparse,
+             "Baseclass didn't provide a complete frame");

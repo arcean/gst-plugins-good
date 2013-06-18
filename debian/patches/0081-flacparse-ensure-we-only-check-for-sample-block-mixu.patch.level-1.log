@@ -1,0 +1,2 @@
+patching file gst/audioparsers/gstflacparse.c
+patching file gst/audioparsers/gstflacparse.h

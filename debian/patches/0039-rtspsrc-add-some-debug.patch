@@ -1,0 +1,22 @@
+From 4b2e8e0dce414c678238ff32af196bea5546e559 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Wed, 24 Aug 2011 14:53:53 +0200
+Subject: [PATCH] rtspsrc: add some debug
+
+---
+ gst/rtsp/gstrtspsrc.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/gst/rtsp/gstrtspsrc.c b/gst/rtsp/gstrtspsrc.c
+index f61e4d2..b11885e 100644
+--- a/gst/rtsp/gstrtspsrc.c
++++ b/gst/rtsp/gstrtspsrc.c
+@@ -1678,7 +1678,7 @@ gst_rtspsrc_flush (GstRTSPSrc * src, gboolean flush, gboolean playing)
+     state = GST_STATE_PAUSED;
+   } else {
+     event = gst_event_new_flush_stop ();
+-    GST_DEBUG_OBJECT (src, "stop flush");
++    GST_DEBUG_OBJECT (src, "stop flush; playing %d", playing);
+     cmd = CMD_WAIT;
+     if (playing)
+       state = GST_STATE_PLAYING;

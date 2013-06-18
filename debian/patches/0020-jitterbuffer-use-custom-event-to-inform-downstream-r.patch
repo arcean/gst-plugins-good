@@ -1,0 +1,127 @@
+From 13b24ff5d69714020afaa65a05eb0073eb8b634b Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Mon, 27 Jun 2011 10:44:50 +0200
+Subject: [PATCH] jitterbuffer: use custom event to inform downstream regarding live buffering
+
+... which e.g. downstream (base)sink can use to correctly determine
+sync time.
+
+Fixes #bug 644404.
+---
+ gst/rtpmanager/gstrtpjitterbuffer.c |   49 +++++++++++++++++++++++++++++++++-
+ 1 files changed, 47 insertions(+), 2 deletions(-)
+
+diff --git a/gst/rtpmanager/gstrtpjitterbuffer.c b/gst/rtpmanager/gstrtpjitterbuffer.c
+index e118699..5adf074 100644
+--- a/gst/rtpmanager/gstrtpjitterbuffer.c
++++ b/gst/rtpmanager/gstrtpjitterbuffer.c
+@@ -131,6 +131,8 @@ struct _GstRtpJitterBufferPrivate
+   gboolean discont;
+   gboolean active;
+   guint64 out_offset;
++  GstEvent *pending_event;
++  gint pending_count;
+ 
+   /* properties */
+   guint latency_ms;
+@@ -696,6 +698,12 @@ gst_rtp_jitter_buffer_set_active (GstRtpJitterBuffer * jbuf, gboolean active,
+     GST_DEBUG_OBJECT (jbuf, "out offset %" GST_TIME_FORMAT,
+         GST_TIME_ARGS (priv->out_offset));
+     priv->active = active;
++    if (priv->pending_event)
++      gst_event_unref (priv->pending_event);
++    priv->pending_event = gst_event_new_custom (GST_EVENT_CUSTOM_DOWNSTREAM,
++        gst_structure_new ("GstLiveBuffering",
++            "offset", G_TYPE_UINT64, active ? offset : (guint64) (-1), NULL));
++    priv->pending_count = 2;
+     JBUF_SIGNAL (priv);
+   }
+   if (!active) {
+@@ -902,6 +910,10 @@ gst_rtp_jitter_buffer_flush_stop (GstRtpJitterBuffer * jitterbuffer)
+   GST_DEBUG_OBJECT (jitterbuffer, "flush and reset jitterbuffer");
+   rtp_jitter_buffer_flush (priv->jbuf);
+   rtp_jitter_buffer_reset_skew (priv->jbuf);
++  if (jitterbuffer->priv->pending_event) {
++    gst_event_unref (jitterbuffer->priv->pending_event);
++    jitterbuffer->priv->pending_event = NULL;
++  }
+   JBUF_UNLOCK (priv);
+ }
+ 
+@@ -990,6 +1002,10 @@ gst_rtp_jitter_buffer_change_state (GstElement * element,
+         ret = GST_STATE_CHANGE_NO_PREROLL;
+       break;
+     case GST_STATE_CHANGE_PAUSED_TO_READY:
++      if (jitterbuffer->priv->pending_event) {
++        gst_event_unref (jitterbuffer->priv->pending_event);
++        jitterbuffer->priv->pending_event = NULL;
++      }
+       break;
+     case GST_STATE_CHANGE_READY_TO_NULL:
+       break;
+@@ -1487,8 +1503,6 @@ apply_offset (GstRtpJitterBuffer * jitterbuffer, GstClockTime timestamp)
+ 
+   /* apply the timestamp offset, this is used for inter stream sync */
+   timestamp += priv->ts_offset;
+-  /* add the offset, this is used when buffering */
+-  timestamp += priv->out_offset;
+ 
+   return timestamp;
+ }
+@@ -1575,6 +1589,7 @@ gst_rtp_jitter_buffer_loop (GstRtpJitterBuffer * jitterbuffer)
+ {
+   GstRtpJitterBufferPrivate *priv;
+   GstBuffer *outbuf;
++  GstEvent *event = NULL;
+   GstFlowReturn result;
+   guint16 seqnum;
+   guint32 next_seqnum;
+@@ -1651,6 +1666,19 @@ again:
+       }
+     }
+   do_wait:
++    /* inform sink if we are buffering */
++    if (G_UNLIKELY (priv->pending_event)) {
++      event = priv->pending_event;
++      priv->pending_event = NULL;
++      JBUF_UNLOCK (priv);
++      GST_DEBUG_OBJECT (jitterbuffer, "updating sink on buffering");
++      gst_pad_push_event (priv->srcpad, event);
++      event = NULL;
++      /* dropped lock, recheck stuff */
++      JBUF_LOCK_CHECK (priv, flushing);
++      continue;
++    }
++
+     /* now we wait */
+     GST_DEBUG_OBJECT (jitterbuffer, "waiting");
+     priv->waiting = TRUE;
+@@ -1897,11 +1925,28 @@ push_buffer:
+   priv->last_popped_seqnum = seqnum;
+   priv->last_out_time = out_time;
+   priv->next_seqnum = (seqnum + 1) & 0xffff;
++
++  /* if needed, update sink on how much/long we buffered */
++  if (G_UNLIKELY (priv->pending_event && priv->active)) {
++    event = priv->pending_event;
++    priv->pending_count--;
++    /* first event might get dropped if downstream unlinked */
++    if (priv->pending_count)
++      gst_event_ref (event);
++    else
++      priv->pending_event = NULL;
++  }
+   JBUF_UNLOCK (priv);
+ 
+   if (percent != -1)
+     post_buffering_percent (jitterbuffer, percent);
+ 
++  if (G_UNLIKELY (event)) {
++    GST_DEBUG_OBJECT (jitterbuffer, "updating sink on buffering");
++    gst_pad_push_event (priv->srcpad, event);
++    event = NULL;
++  }
++
+   /* push buffer */
+   GST_DEBUG_OBJECT (jitterbuffer,
+       "Pushing buffer %d, timestamp %" GST_TIME_FORMAT, seqnum,

@@ -1,0 +1,122 @@
+From d4e38d299d7af589dbeb9edcefb7618ea98a1d6f Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Tue, 30 Aug 2011 13:33:49 +0200
+Subject: [PATCH] qtdemux: push mode; perform some extra checks prior to upstream seeking
+
+---
+ gst/isomp4/qtdemux.c |   59 ++++++++++++++++++++++++++++++++++++++++++++++++-
+ gst/isomp4/qtdemux.h |    3 ++
+ 2 files changed, 60 insertions(+), 2 deletions(-)
+
+diff --git a/gst/isomp4/qtdemux.c b/gst/isomp4/qtdemux.c
+index 5b5b7cd..b9623fe 100644
+--- a/gst/isomp4/qtdemux.c
++++ b/gst/isomp4/qtdemux.c
+@@ -1866,6 +1866,8 @@ gst_qtdemux_change_state (GstElement * element, GstStateChange transition)
+       gst_segment_init (&qtdemux->segment, GST_FORMAT_TIME);
+       qtdemux->requested_seek_time = GST_CLOCK_TIME_NONE;
+       qtdemux->seek_offset = 0;
++      qtdemux->upstream_seekable = FALSE;
++      qtdemux->upstream_size = 0;
+       break;
+     }
+     default:
+@@ -4014,6 +4016,49 @@ qtdemux_seek_offset (GstQTDemux * demux, guint64 offset)
+   return res;
+ }
+ 
++/* check for seekable upstream, above and beyond a mere query */
++static void
++gst_qtdemux_check_seekability (GstQTDemux * demux)
++{
++  GstQuery *query;
++  gboolean seekable = FALSE;
++  gint64 start = -1, stop = -1;
++
++  if (demux->upstream_size)
++    return;
++
++  query = gst_query_new_seeking (GST_FORMAT_BYTES);
++  if (!gst_pad_peer_query (demux->sinkpad, query)) {
++    GST_DEBUG_OBJECT (demux, "seeking query failed");
++    goto done;
++  }
++
++  gst_query_parse_seeking (query, NULL, &seekable, &start, &stop);
++
++  /* try harder to query upstream size if we didn't get it the first time */
++  if (seekable && stop == -1) {
++    GstFormat fmt = GST_FORMAT_BYTES;
++
++    GST_DEBUG_OBJECT (demux, "doing duration query to fix up unset stop");
++    gst_pad_query_peer_duration (demux->sinkpad, &fmt, &stop);
++  }
++
++  /* if upstream doesn't know the size, it's likely that it's not seekable in
++   * practice even if it technically may be seekable */
++  if (seekable && (start != 0 || stop <= start)) {
++    GST_DEBUG_OBJECT (demux, "seekable but unknown start/stop -> disable");
++    seekable = FALSE;
++  }
++
++done:
++  gst_query_unref (query);
++
++  GST_DEBUG_OBJECT (demux, "seekable: %d (%" G_GUINT64_FORMAT " - %"
++      G_GUINT64_FORMAT ")", seekable, start, stop);
++  demux->upstream_seekable = seekable;
++  demux->upstream_size = seekable ? stop : -1;
++}
++
+ /* FIXME, unverified after edit list updates */
+ static GstFlowReturn
+ gst_qtdemux_chain (GstPad * sinkpad, GstBuffer * inbuf)
+@@ -4045,6 +4090,8 @@ gst_qtdemux_chain (GstPad * sinkpad, GstBuffer * inbuf)
+         guint32 fourcc;
+         guint64 size;
+ 
++        gst_qtdemux_check_seekability (demux);
++
+         data = gst_adapter_peek (demux->adapter, demux->neededbytes);
+ 
+         /* get fourcc/length, set neededbytes */
+@@ -4081,7 +4128,15 @@ gst_qtdemux_chain (GstPad * sinkpad, GstBuffer * inbuf)
+             target = old + size;
+ 
+             /* try to jump over the atom with a seek */
+-            res = qtdemux_seek_offset (demux, target);
++            /* only bother if it seems worth doing so,
++             * and avoids possible upstream/server problems */
++            if (demux->upstream_seekable &&
++                demux->upstream_size > 4 * (1 << 20)) {
++              res = qtdemux_seek_offset (demux, target);
++            } else {
++              GST_DEBUG_OBJECT (demux, "skipping seek");
++              res = FALSE;
++            }
+ 
+             if (res) {
+               GST_DEBUG_OBJECT (demux, "seek success");
+@@ -4099,7 +4154,7 @@ gst_qtdemux_chain (GstPad * sinkpad, GstBuffer * inbuf)
+             } else {
+               /* seek failed, need to buffer */
+               demux->offset = old;
+-              GST_DEBUG_OBJECT (demux, "seek failed");
++              GST_DEBUG_OBJECT (demux, "seek failed/skipped");
+               /* there may be multiple mdat (or alike) buffers */
+               /* sanity check */
+               if (demux->mdatbuffer)
+diff --git a/gst/isomp4/qtdemux.h b/gst/isomp4/qtdemux.h
+index 069fa72..b26d896 100644
+--- a/gst/isomp4/qtdemux.h
++++ b/gst/isomp4/qtdemux.h
+@@ -109,6 +109,9 @@ struct _GstQTDemux {
+ 
+   gint64 requested_seek_time;
+   guint64 seek_offset;
++
++  gboolean upstream_seekable;
++  gboolean upstream_size;
+ };
+ 
+ struct _GstQTDemuxClass {

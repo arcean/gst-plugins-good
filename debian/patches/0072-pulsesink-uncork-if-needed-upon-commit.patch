@@ -1,0 +1,27 @@
+From 59fd8e2e0adcce09ff07c10cf293ca5b13b5e731 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Mon, 22 Aug 2011 15:33:33 +0200
+Subject: [PATCH] pulsesink: uncork if needed upon commit
+
+... to provide for a running clock.
+---
+ ext/pulse/pulsesink.c |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/ext/pulse/pulsesink.c b/ext/pulse/pulsesink.c
+index e42c7c9..d5dc1b7 100644
+--- a/ext/pulse/pulsesink.c
++++ b/ext/pulse/pulsesink.c
+@@ -1336,6 +1336,12 @@ gst_pulseringbuffer_commit (GstRingBuffer * buf, guint64 * sample,
+   if (pbuf->paused)
+     goto was_paused;
+ 
++  /* ensure running clock for whatever out there */
++  if (pbuf->corked) {
++    if (!gst_pulsering_set_corked (pbuf, FALSE, FALSE))
++      goto uncork_failed;
++  }
++
+   /* offset is in bytes */
+   offset = *sample * bps;
+ 

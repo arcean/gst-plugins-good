@@ -1,0 +1,45 @@
+From 744875ac756eef47faf5363e4cfb65b935848f13 Mon Sep 17 00:00:00 2001
+From: Thiago Santos <thiago.sousa.santos@collabora.co.uk>
+Date: Fri, 30 Sep 2011 13:02:31 -0300
+Subject: [PATCH] qtmux: update esds atom under wave atom for aac bitrates
+
+AAC in mov format puts an ESDS atom inside of a WAVE atom in
+STSD atom, we need to update the bitrate on this ESDS. This patch
+fixes it.
+---
+ gst/isomp4/atoms.c |   15 +++++++++++++++
+ 1 files changed, 15 insertions(+), 0 deletions(-)
+
+diff --git a/gst/isomp4/atoms.c b/gst/isomp4/atoms.c
+index ee190dd..5bd6cb7 100644
+--- a/gst/isomp4/atoms.c
++++ b/gst/isomp4/atoms.c
+@@ -2748,6 +2748,7 @@ atom_trak_update_bitrates (AtomTRAK * trak, guint32 avg_bitrate,
+ {
+   AtomESDS *esds = NULL;
+   AtomData *btrt = NULL;
++  AtomWAVE *wave = NULL;
+   AtomSTSD *stsd;
+   GList *iter;
+   GList *extensioniter = NULL;
+@@ -2783,6 +2784,20 @@ atom_trak_update_bitrates (AtomTRAK * trak, guint32 avg_bitrate,
+       esds = (AtomESDS *) atominfo->atom;
+     } else if (atominfo->atom->type == FOURCC_btrt) {
+       btrt = (AtomData *) atominfo->atom;
++    } else if (atominfo->atom->type == FOURCC_wave) {
++      wave = (AtomWAVE *) atominfo->atom;
++    }
++  }
++
++  /* wave might have an esds internally */
++  if (wave) {
++    for (extensioniter = wave->extension_atoms; extensioniter;
++        extensioniter = g_list_next (extensioniter)) {
++      AtomInfo *atominfo = extensioniter->data;
++      if (atominfo->atom->type == FOURCC_esds) {
++        esds = (AtomESDS *) atominfo->atom;
++        break;
++      }
+     }
+   }
+ 

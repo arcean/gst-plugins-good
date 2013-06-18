@@ -1,0 +1,23 @@
+From 9a0fbfad35e6968fc898b2434d25eeeac1731174 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Fri, 29 Jul 2011 12:07:24 +0200
+Subject: [PATCH] rtpsession: properly init rtcp_min_interval
+
+---
+ gst/rtpmanager/rtpsession.c |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/gst/rtpmanager/rtpsession.c b/gst/rtpmanager/rtpsession.c
+index 6056d09..96a2495 100644
+--- a/gst/rtpmanager/rtpsession.c
++++ b/gst/rtpmanager/rtpsession.c
+@@ -534,6 +534,9 @@ rtp_session_init (RTPSession * sess)
+   sess->stats.active_sources++;
+   INIT_AVG (sess->stats.avg_rtcp_packet_size, 100);
+ 
++  rtp_stats_set_min_interval (&sess->stats,
++      (gdouble) DEFAULT_RTCP_MIN_INTERVAL / GST_SECOND);
++
+   /* default UDP header length */
+   sess->header_len = 28;
+   sess->mtu = DEFAULT_RTCP_MTU;

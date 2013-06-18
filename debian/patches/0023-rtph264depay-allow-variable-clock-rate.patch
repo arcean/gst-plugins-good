@@ -1,0 +1,23 @@
+From 79e85ce25439107bc16e6c1f70caa5046472c99c Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Fri, 15 Jul 2011 14:39:55 +0200
+Subject: [PATCH] rtph264depay: allow variable clock-rate
+
+... to cater for broken servers.
+---
+ gst/rtp/gstrtph264depay.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/gst/rtp/gstrtph264depay.c b/gst/rtp/gstrtph264depay.c
+index b91b9ea..bead8ef 100644
+--- a/gst/rtp/gstrtph264depay.c
++++ b/gst/rtp/gstrtph264depay.c
+@@ -59,7 +59,7 @@ GST_STATIC_PAD_TEMPLATE ("sink",
+     GST_STATIC_CAPS ("application/x-rtp, "
+         "media = (string) \"video\", "
+         "payload = (int) " GST_RTP_PAYLOAD_DYNAMIC_STRING ", "
+-        "clock-rate = (int) 90000, " "encoding-name = (string) \"H264\"")
++        "clock-rate = (int) [ 1, MAX  ], " "encoding-name = (string) \"H264\"")
+         /** optional parameters **/
+     /* "profile-level-id = (string) ANY, " */
+     /* "max-mbps = (string) ANY, " */

@@ -1,0 +1,122 @@
+Source: gst-plugins-good@GST_ABI@
+Section: libs
+Priority: optional
+Maintainer: Maemo Multimedia <multimedia@maemo.org>
+XSBC-Original-Maintainer: Maintainers of GStreamer packages <pkg-gstreamer-maintainers@lists.alioth.debian.org>
+XSBC-Original-Uploaders: Loic Minier <lool@dooz.org>,
+           Sebastian Dröge <slomo@debian.org>,
+           Sjoerd Simons <sjoerd@debian.org>
+Build-Depends: 	libgstreamer0.10-dev (>= 0.10.32.1),
+		libgstreamer-plugins-base0.10-dev (>= 0.10.32.1),
+		autotools-dev, 
+		autopoint,
+		automake1.10, 
+		cdbs (>= 0.4.20), 
+		debhelper (>= 5), 
+		pkg-config (>= 0.11.0), 
+		gtk-doc-tools, 
+		libgconf2-dev, 
+		libglib2.0-dev (>= 2.12), 
+		liborc-0.4-dev (>= 0.4.11), 
+		libcairo2-dev, 
+		libspeex-dev (>= 1.1.6), 
+		libflac-dev,
+		libpng12-dev, 
+		libjpeg62-dev (>= 6b), 
+		gconf2, 
+		libxext-dev, 
+		libxv-dev, 
+		libxml2-dev, 
+		libdbus-1-dev (>= 0.32), 
+		libhal-dev (>= 0.5.6), 
+		gstreamer-tools (>= 0.10.14), 
+		lsb-release, 
+		gstreamer0.10-plugins-base, 
+		python,
+		libsoup2.4-dev (>= 2.26), 
+		libpulse-dev (>= 0.9.8), 
+		libbz2-dev,
+        quilt
+Standards-Version: 3.8.0
+
+Package: @GST_PKGNAME@-plugins-good-doc
+Architecture: all
+Section: doc
+Depends: ${misc:Depends},
+         gstreamer0.10-doc,
+         gstreamer0.10-plugins-base-doc
+Description: GStreamer documentation for plugins from the "good" set
+ GStreamer is a streaming media framework, based on graphs of filters
+ which operate on media data.  Applications using this library can do
+ anything from real-time sound processing to playing videos, and just
+ about anything else media-related.  Its plugin-based architecture means
+ that new data types or processing capabilities can be added simply by
+ installing new plug-ins.
+ .
+ This package contains documentation for plugins from the "good" set,
+ a set of good-quality plug-ins under the LGPL license.
+
+Package: @GST_PKGNAME@-plugins-good
+Architecture: any
+Section: libs
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+         gstreamer0.10-plugins-base (>= 0.10.32.1),
+         libgstreamer-plugins-base0.10-0 (>= 0.10.32.1)
+XB-GStreamer-Version: ${gstreamer:Version}
+XB-GStreamer-Elements: ${gstreamer:Elements}
+XB-GStreamer-URI-Sources: ${gstreamer:URISources}
+XB-GStreamer-URI-Sinks: ${gstreamer:URISinks}
+XB-GStreamer-Encoders: ${gstreamer:Encoders}
+XB-GStreamer-Decoders: ${gstreamer:Decoders}
+Provides: ${gstreamer:Provides}
+Replaces:  gstreamer0.10-plugins-good-extra (<< 0.10.25.5-0maemo1), gstreamer0.10-plugins-bad (<< 0.10.21-git364-0maemo1), gstreamer0.10-plugins-good-extra-formats
+Breaks: ngfd (<< 0.25)
+Description: GStreamer plugins from the "good" set
+ GStreamer is a streaming media framework, based on graphs of filters
+ which operate on media data.  Applications using this library can do
+ anything from real-time sound processing to playing videos, and just
+ about anything else media-related.  Its plugin-based architecture means
+ that new data types or processing capabilities can be added simply by
+ installing new plug-ins.
+ .
+ This package contains the GStreamer plugins from the "good" set, a set
+ of good-quality plug-ins under the LGPL license.
+
+Package: @GST_PKGNAME@-plugins-good-dbg
+Architecture: any
+Section: libdevel
+Priority: extra
+Depends: ${misc:Depends}, gstreamer0.10-plugins-good (= ${binary:Version})
+Replaces: gstreamer0.10-plugins-good-extra-dbg (<< 0.10.16-git276-0maemo15), gstreamer0.10-plugins-bad-dbg (<< 0.10.21-git364-0maemo1)
+Description: GStreamer plugins from the "good" set
+ GStreamer is a streaming media framework, based on graphs of filters
+ which operate on media data.  Applications using this library can do
+ anything from real-time sound processing to playing videos, and just
+ about anything else media-related.  Its plugin-based architecture means
+ that new data types or processing capabilities can be added simply by
+ installing new plug-ins.
+ .
+ This package contains unstripped shared libraries. It is provided primarily
+ to provide a backtrace with names in a debugger, this makes it somewhat
+ easier to interpret core dumps. The libraries are installed in
+ /usr/lib/debug and are automatically used by gdb.
+
+Package: @GST_PKGNAME@-plugins-good-extra
+Architecture: any
+Section: libs
+Depends: ${misc:Depends}, ${shlibs:Depends}, gstreamer0.10-plugins-good (>= ${binary:Version})
+Replaces: gstreamer0.10-plugins-good (<< 0.10.15-0maemo4)
+Description: Collection of various GStreamer plugins
+ This package provides gstmultifilesink and gstmultifilesrc 
+ elements.
+
+Package: @GST_PKGNAME@-plugins-good-extra-dbg
+Architecture: any
+Section: libdevel
+Priority: extra
+Depends: ${misc:Depends}, gstreamer0.10-plugins-good-extra (= ${binary:Version})
+Replaces: gstreamer0.10-plugins-good-dbg (<< 0.10.15-0maemo4)
+Description: Debug symbols for gstreamer0.10-plugins-good-extra
+ This package provides gstmultifilesink and gstmultifilesrc
+ elements and debug symbols.

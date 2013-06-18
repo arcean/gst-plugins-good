@@ -1,0 +1,263 @@
+From 8bc651499656c4462461175db8bf2b870537dc99 Mon Sep 17 00:00:00 2001
+From: Olivier Crete <olivier.crete@collabora.co.uk>
+Date: Wed, 3 Aug 2011 09:44:34 +1000
+Subject: [PATCH] rtspsrc: start udp timeout when receiving response to PLAY
+
+Use GstSystemClock for the timeout instead of using the udpsrc property.
+Use pad probe to know if a packet has been received instead of relying on pad blocking
+which could be triggered by other things than a buffer.
+
+Based on patch by Mark Nauwelaerts
+---
+ gst/rtsp/gstrtspsrc.c |  141 ++++++++++++++++++++++++++-----------------------
+ gst/rtsp/gstrtspsrc.h |    4 +-
+ 2 files changed, 77 insertions(+), 68 deletions(-)
+
+diff --git a/gst/rtsp/gstrtspsrc.c b/gst/rtsp/gstrtspsrc.c
+index 3de1e2e..6755dda 100644
+--- a/gst/rtsp/gstrtspsrc.c
++++ b/gst/rtsp/gstrtspsrc.c
+@@ -2175,35 +2175,27 @@ gst_rtspsrc_sink_chain (GstPad * pad, GstBuffer * buffer)
+   return res;
+ }
+ 
+-static void
+-pad_unblocked (GstPad * pad, gboolean blocked, GstRTSPSrc * src)
+-{
+-  GST_DEBUG_OBJECT (src, "pad %s:%s unblocked", GST_DEBUG_PAD_NAME (pad));
+-}
+ 
+-static void
+-pad_blocked (GstPad * pad, gboolean blocked, GstRTSPSrc * src)
++static gboolean
++pad_probed (GstPad * pad, GstBuffer * buf, GstRTSPSrc * src)
+ {
+-  GST_DEBUG_OBJECT (src, "pad %s:%s blocked, activating streams",
++  gboolean need_activate;
++
++  GST_DEBUG_OBJECT (src, "pad %s:%s got buffer, activating streams",
+       GST_DEBUG_PAD_NAME (pad));
+ 
+   /* activate the streams */
++  GST_RTSP_STATE_LOCK (src);
+   GST_OBJECT_LOCK (src);
+-  if (!src->need_activate)
+-    goto was_ok;
+-
++  need_activate = src->need_activate;
+   src->need_activate = FALSE;
+   GST_OBJECT_UNLOCK (src);
++  GST_RTSP_STATE_UNLOCK (src);
+ 
+-  gst_rtspsrc_activate_streams (src);
+-
+-  return;
++  if (need_activate)
++    gst_rtspsrc_activate_streams (src);
+ 
+-was_ok:
+-  {
+-    GST_OBJECT_UNLOCK (src);
+-    return;
+-  }
++  return TRUE;
+ }
+ 
+ /* this callback is called when the session manager generated a new src pad with
+@@ -2784,23 +2776,15 @@ gst_rtspsrc_stream_configure_udp (GstRTSPSrc * src, GstRTSPStream * stream,
+ 
+     GST_DEBUG_OBJECT (src, "setting up UDP source");
+ 
+-    /* configure a timeout on the UDP port. When the timeout message is
+-     * posted, we assume UDP transport is not possible. We reconnect using TCP
+-     * if we can. */
+-    g_object_set (G_OBJECT (stream->udpsrc[0]), "timeout", src->udp_timeout,
+-        NULL);
+-
+     /* get output pad of the UDP source. */
+     *outpad = gst_element_get_static_pad (stream->udpsrc[0], "src");
+ 
+-    /* save it so we can unblock */
+-    stream->blockedpad = *outpad;
+-
+     /* configure pad block on the pad. As soon as there is dataflow on the
+      * UDP source, we know that UDP is not blocked by a firewall and we can
+      * configure all the streams to let the application autoplug decoders. */
+-    gst_pad_set_blocked_async (stream->blockedpad, TRUE,
+-        (GstPadBlockCallback) pad_blocked, src);
++    stream->probedpad = *outpad;
++    stream->probeid = gst_pad_add_buffer_probe_full (stream->probedpad,
++        G_CALLBACK (pad_probed), gst_object_ref (src), gst_object_unref);
+ 
+     if (stream->channelpad[0]) {
+       GST_DEBUG_OBJECT (src, "connecting UDP source 0 to manager");
+@@ -3122,14 +3106,18 @@ gst_rtspsrc_activate_streams (GstRTSPSrc * src)
+ 
+   GST_DEBUG_OBJECT (src, "activating streams");
+ 
++  GST_RTSP_STATE_LOCK (src);
++  src->ignore_timeout = TRUE;
++  if (src->start_timeout_id) {
++    gst_clock_id_unschedule (src->start_timeout_id);
++    gst_clock_id_unref (src->start_timeout_id);
++    src->start_timeout_id = NULL;
++  }
++  GST_RTSP_STATE_UNLOCK (src);
++
+   for (walk = src->streams; walk; walk = g_list_next (walk)) {
+     GstRTSPStream *stream = (GstRTSPStream *) walk->data;
+ 
+-    if (stream->udpsrc[0]) {
+-      /* remove timeout, we are streaming now and timeouts will be handled by
+-       * the session manager and jitter buffer */
+-      g_object_set (G_OBJECT (stream->udpsrc[0]), "timeout", (guint64) 0, NULL);
+-    }
+     if (stream->srcpad) {
+       /* if we don't have a session manager, set the caps now. If we have a
+        * session, we will get a notification of the pad and the caps. */
+@@ -3149,19 +3137,19 @@ gst_rtspsrc_activate_streams (GstRTSPSrc * src)
+     }
+   }
+ 
+-  /* unblock all pads */
++  /* unprobe all pads */
+   for (walk = src->streams; walk; walk = g_list_next (walk)) {
+     GstRTSPStream *stream = (GstRTSPStream *) walk->data;
+ 
+-    if (stream->blockedpad) {
+-      GST_DEBUG_OBJECT (src, "unblocking stream pad %p", stream);
+-      gst_pad_set_blocked_async (stream->blockedpad, FALSE,
+-          (GstPadBlockCallback) pad_unblocked, src);
+-      stream->blockedpad = NULL;
++    if (stream->probedpad) {
++      GST_DEBUG_OBJECT (src, "unprobing stream pad %p", stream);
++      gst_pad_remove_buffer_probe (stream->probedpad,
++          stream->probeid);
++      stream->probedpad = NULL;
+     }
+   }
+ 
+-  return TRUE;
++return TRUE;
+ }
+ 
+ static void
+@@ -5891,6 +5879,26 @@ clear_rtp_base (GstRTSPSrc * src, GstRTSPStream * stream)
+ }
+ 
+ static gboolean
++start_timeout (GstClock *clock, GstClockTime time, GstClockID id,
++    gpointer user_data)
++{
++  GstRTSPSrc *rtspsrc = user_data;
++  gboolean ignore_timeout;
++
++  GST_OBJECT_LOCK (rtspsrc);
++  ignore_timeout = rtspsrc->ignore_timeout;
++  rtspsrc->ignore_timeout = TRUE;
++  GST_OBJECT_UNLOCK (rtspsrc);
++
++  /* we only act on the first udp timeout message, others are irrelevant
++   * and can be ignored. */
++  if (!ignore_timeout)
++    gst_rtspsrc_loop_send_cmd (rtspsrc, CMD_RECONNECT, TRUE);
++
++  return TRUE;
++}
++
++static gboolean
+ gst_rtspsrc_play (GstRTSPSrc * src, GstSegment * segment)
+ {
+   GstRTSPMessage request = { 0 };
+@@ -6037,6 +6045,24 @@ gst_rtspsrc_play (GstRTSPSrc * src, GstSegment * segment)
+     if (control)
+       break;
+   }
++
++  /* now we got the server's response/attention,
++   * start checking for data reception timeout */
++  GST_DEBUG_OBJECT (src, "configuring timeout %" G_GUINT64_FORMAT,
++      src->udp_timeout);
++
++  GST_RTSP_STATE_LOCK (src);
++  if (src->need_activate) {
++    GstClock *system_clock = gst_system_clock_obtain ();
++
++    src->start_timeout_id = gst_clock_new_single_shot_id (system_clock,
++        gst_clock_get_time (system_clock) + (src->udp_timeout * GST_USECOND));
++    gst_clock_id_wait_async_full (src->start_timeout_id,
++        start_timeout, gst_object_ref (src), gst_object_unref);
++    gst_object_unref (system_clock);
++  }
++  GST_RTSP_STATE_UNLOCK (src);
++
+   /* set again when needed */
+   src->need_range = FALSE;
+ 
+@@ -6108,6 +6134,12 @@ gst_rtspsrc_pause (GstRTSPSrc * src, gboolean idle)
+ 
+   GST_DEBUG_OBJECT (src, "PAUSE...");
+ 
++  if (src->start_timeout_id) {
++    gst_clock_id_unschedule (src->start_timeout_id);
++    gst_clock_id_unref (src->start_timeout_id);
++    src->start_timeout_id = NULL;
++  }
++
+   if (!(src->methods & GST_RTSP_PAUSE))
+     goto not_supported;
+ 
+@@ -6222,31 +6254,6 @@ gst_rtspsrc_handle_message (GstBin * bin, GstMessage * message)
+     case GST_MESSAGE_EOS:
+       gst_message_unref (message);
+       break;
+-    case GST_MESSAGE_ELEMENT:
+-    {
+-      const GstStructure *s = gst_message_get_structure (message);
+-
+-      if (gst_structure_has_name (s, "GstUDPSrcTimeout")) {
+-        gboolean ignore_timeout;
+-
+-        GST_DEBUG_OBJECT (bin, "timeout on UDP port");
+-
+-        GST_OBJECT_LOCK (rtspsrc);
+-        ignore_timeout = rtspsrc->ignore_timeout;
+-        rtspsrc->ignore_timeout = TRUE;
+-        GST_OBJECT_UNLOCK (rtspsrc);
+-
+-        /* we only act on the first udp timeout message, others are irrelevant
+-         * and can be ignored. */
+-        if (!ignore_timeout)
+-          gst_rtspsrc_loop_send_cmd (rtspsrc, CMD_RECONNECT, TRUE);
+-        /* eat and free */
+-        gst_message_unref (message);
+-        return;
+-      }
+-      GST_BIN_CLASS (parent_class)->handle_message (bin, message);
+-      break;
+-    }
+     case GST_MESSAGE_ERROR:
+     {
+       GstObject *udpsrc;
+diff --git a/gst/rtsp/gstrtspsrc.h b/gst/rtsp/gstrtspsrc.h
+index e30cb8d..1344ab9 100644
+--- a/gst/rtsp/gstrtspsrc.h
++++ b/gst/rtsp/gstrtspsrc.h
+@@ -115,7 +115,8 @@ struct _GstRTSPStream {
+ 
+   /* our udp sources */
+   GstElement   *udpsrc[2];
+-  GstPad       *blockedpad;
++  GstPad       *probedpad;
++  gulong        probeid;
+   gboolean      is_ipv6;
+ 
+   /* our udp sinks back to the server */
+@@ -184,6 +185,7 @@ struct _GstRTSPSrc {
+   /* UDP mode loop */
+   gint             loop_cmd;
+   gboolean         ignore_timeout;
++  GstClockID       start_timeout_id;
+ 
+   /* mutex for protecting state changes */
+   GStaticRecMutex *state_rec_lock;

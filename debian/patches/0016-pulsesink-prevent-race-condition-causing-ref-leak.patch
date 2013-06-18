@@ -1,0 +1,107 @@
+From 9db604bcb03e4f1520df2acb4684b2d9281182b1 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Stadler?= <rene.stadler@nokia.com>
+Date: Wed, 29 Jun 2011 20:59:26 +0300
+Subject: [PATCH] pulsesink: prevent race condition causing ref leak
+
+Since commit 8bfd80, gst_pulseringbuffer_stop doesn't wait for the
+deferred call to be run before returning. This causes a race when
+READY->NULL is executed shortly after, which stops the mainloop. This
+leaks the element reference which is passed as userdata for the callback
+(introduced in commit 7cf996, bug #614765).
+
+The correct fix is to wait in READY->NULL for all outstanding calls to
+be fired (since libpulse doesn't provide a DestroyNotify for the
+userdata). We get rid of the reference passing from 7cf996 altogether,
+since finalization from the callback would anyways lead to a deadlock.
+
+Re-fixes bug #614765.
+---
+ ext/pulse/pulsesink.c |   18 +++++++++++++++---
+ ext/pulse/pulsesink.h |    2 ++
+ 2 files changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/ext/pulse/pulsesink.c b/ext/pulse/pulsesink.c
+index 3db04b3..e42c7c9 100644
+--- a/ext/pulse/pulsesink.c
++++ b/ext/pulse/pulsesink.c
+@@ -1039,6 +1039,7 @@ gst_pulseringbuffer_clear (GstRingBuffer * buf)
+   pa_threaded_mainloop_unlock (mainloop);
+ }
+ 
++/* called from pulse with the mainloop lock */
+ static void
+ mainloop_enter_defer_cb (pa_mainloop_api * api, void *userdata)
+ {
+@@ -1056,7 +1057,8 @@ mainloop_enter_defer_cb (pa_mainloop_api * api, void *userdata)
+ 
+   gst_element_post_message (GST_ELEMENT (pulsesink), message);
+ 
+-  /* signal the waiter */
++  g_return_if_fail (pulsesink->defer_pending);
++  pulsesink->defer_pending--;
+   pa_threaded_mainloop_signal (mainloop, 0);
+ }
+ 
+@@ -1073,6 +1075,7 @@ gst_pulseringbuffer_start (GstRingBuffer * buf)
+   pa_threaded_mainloop_lock (mainloop);
+ 
+   GST_DEBUG_OBJECT (psink, "scheduling stream status");
++  psink->defer_pending++;
+   pa_mainloop_api_once (pa_threaded_mainloop_get_api (mainloop),
+       mainloop_enter_defer_cb, psink);
+ 
+@@ -1116,6 +1119,7 @@ gst_pulseringbuffer_pause (GstRingBuffer * buf)
+   return res;
+ }
+ 
++/* called from pulse with the mainloop lock */
+ static void
+ mainloop_leave_defer_cb (pa_mainloop_api * api, void *userdata)
+ {
+@@ -1132,8 +1136,9 @@ mainloop_leave_defer_cb (pa_mainloop_api * api, void *userdata)
+   gst_message_set_stream_status_object (message, &val);
+   gst_element_post_message (GST_ELEMENT (pulsesink), message);
+ 
++  g_return_if_fail (pulsesink->defer_pending);
++  pulsesink->defer_pending--;
+   pa_threaded_mainloop_signal (mainloop, 0);
+-  gst_object_unref (pulsesink);
+ }
+ 
+ /* stop playback, we flush everything. */
+@@ -1179,7 +1184,7 @@ cleanup:
+   }
+ 
+   GST_DEBUG_OBJECT (psink, "scheduling stream status");
+-  gst_object_ref (psink);
++  psink->defer_pending++;
+   pa_mainloop_api_once (pa_threaded_mainloop_get_api (mainloop),
+       mainloop_leave_defer_cb, psink);
+ 
+@@ -2729,6 +2734,13 @@ gst_pulsesink_release_mainloop (GstPulseSink * psink)
+   if (!mainloop)
+     return;
+ 
++  pa_threaded_mainloop_lock (mainloop);
++  while (psink->defer_pending) {
++    GST_DEBUG_OBJECT (psink, "waiting for stream status message emission");
++    pa_threaded_mainloop_wait (mainloop);
++  }
++  pa_threaded_mainloop_unlock (mainloop);
++
+   g_mutex_lock (pa_shared_resource_mutex);
+   mainloop_ref_ct--;
+   if (!mainloop_ref_ct) {
+diff --git a/ext/pulse/pulsesink.h b/ext/pulse/pulsesink.h
+index e3cbbca..e302929 100644
+--- a/ext/pulse/pulsesink.h
++++ b/ext/pulse/pulsesink.h
+@@ -64,6 +64,8 @@ struct _GstPulseSink
+   gboolean mute:1;
+   gboolean mute_set:1;
+ 
++  guint defer_pending;
++
+   gint notify; /* atomic */
+ 
+   const gchar *pa_version;

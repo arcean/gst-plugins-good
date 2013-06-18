@@ -1,0 +1,3 @@
+patching file gst/isomp4/gstqtmux.c
+patching file gst/isomp4/gstqtmuxmap.c
+patching file gst/isomp4/gstqtmuxmap.h

@@ -1,0 +1,6 @@
+patching file gst/isomp4/Makefile.am
+patching file gst/isomp4/id3tags.c
+patching file gst/isomp4/id3tags.h
+patching file gst/isomp4/id3v2frames.c
+patching file gst/isomp4/qtdemux.c
+patching file gst/isomp4/qtdemux_fourcc.h

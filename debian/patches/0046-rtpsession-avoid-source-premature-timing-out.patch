@@ -1,0 +1,94 @@
+From 8e9f261ed02e7938b7215ba775141655fca5c382 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Fri, 2 Sep 2011 13:41:41 +0200
+Subject: [PATCH] rtpsession: avoid source premature timing out
+
+Use slightly adjusted sender interval to determine sender timeout rather than
+our own sender side interval (which may have been forced small).
+---
+ gst/rtpmanager/rtpsession.c |   31 ++++++++++++++++++++++++++++---
+ gst/rtpmanager/rtpsource.c  |    3 +++
+ 2 files changed, 31 insertions(+), 3 deletions(-)
+
+diff --git a/gst/rtpmanager/rtpsession.c b/gst/rtpmanager/rtpsession.c
+index 1eaa93b..8e0eb16 100644
+--- a/gst/rtpmanager/rtpsession.c
++++ b/gst/rtpmanager/rtpsession.c
+@@ -533,6 +533,8 @@ rtp_session_init (RTPSession * sess)
+   sess->source->internal = TRUE;
+   sess->stats.active_sources++;
+   INIT_AVG (sess->stats.avg_rtcp_packet_size, 100);
++  sess->source->stats.prev_rtcptime = 0;
++  sess->source->stats.last_rtcptime = 1;
+ 
+   rtp_stats_set_min_interval (&sess->stats,
+       (gdouble) DEFAULT_RTCP_MIN_INTERVAL / GST_SECOND);
+@@ -2728,12 +2730,35 @@ session_cleanup (const gchar * key, RTPSource * source, ReportData * data)
+   gboolean sendertimeout = FALSE;
+   gboolean is_sender, is_active;
+   RTPSession *sess = data->sess;
+-  GstClockTime interval;
++  GstClockTime interval, binterval;
+   GstClockTime btime;
+ 
+   is_sender = RTP_SOURCE_IS_SENDER (source);
+   is_active = RTP_SOURCE_IS_ACTIVE (source);
+ 
++  /* our own rtcp interval may have been forced low by secondary configuration,
++   * while sender side may still operate with higher interval,
++   * so do not just take our interval to decide on timing out sender,
++   * but take (if data->interval <= 5 * GST_SECOND):
++   *   interval = CLAMP (sender_interval, data->interval, 5 * GST_SECOND)
++   * where sender_interval is difference between last 2 received RTCP reports
++   */
++  if (data->interval >= 5 * GST_SECOND || (source == sess->source)) {
++    binterval = data->interval;
++  } else {
++    GST_LOG ("prev_rtcp %" GST_TIME_FORMAT ", last_rtcp %" GST_TIME_FORMAT,
++        GST_TIME_ARGS (source->stats.prev_rtcptime),
++        GST_TIME_ARGS (source->stats.last_rtcptime));
++    /* if not received enough yet, fallback to larger default */
++    if (source->stats.last_rtcptime > source->stats.prev_rtcptime)
++      binterval = source->stats.last_rtcptime - source->stats.prev_rtcptime;
++    else
++      binterval = 5 * GST_SECOND;
++    binterval = CLAMP (binterval, data->interval, 5 * GST_SECOND);
++  }
++  GST_LOG ("timeout base interval %" GST_TIME_FORMAT,
++      GST_TIME_ARGS (binterval));
++
+   /* check for our own source, we don't want to delete our own source. */
+   if (!(source == sess->source)) {
+     if (source->received_bye) {
+@@ -2751,7 +2776,7 @@ session_cleanup (const gchar * key, RTPSource * source, ReportData * data)
+     /* mind old time that might pre-date last time going to PLAYING */
+     btime = MAX (source->last_activity, sess->start_time);
+     if (data->current_time > btime) {
+-      interval = MAX (data->interval * 5, 5 * GST_SECOND);
++      interval = MAX (binterval * 5, 5 * GST_SECOND);
+       if (data->current_time - btime > interval) {
+         GST_DEBUG ("removing timeout source %08x, last %" GST_TIME_FORMAT,
+             source->ssrc, GST_TIME_ARGS (btime));
+@@ -2766,7 +2791,7 @@ session_cleanup (const gchar * key, RTPSource * source, ReportData * data)
+     /* mind old time that might pre-date last time going to PLAYING */
+     btime = MAX (source->last_rtp_activity, sess->start_time);
+     if (data->current_time > btime) {
+-      interval = MAX (data->interval * 2, 5 * GST_SECOND);
++      interval = MAX (binterval * 2, 5 * GST_SECOND);
+       if (data->current_time - btime > interval) {
+         GST_DEBUG ("sender source %08x timed out and became receiver, last %"
+             GST_TIME_FORMAT, source->ssrc, GST_TIME_ARGS (btime));
+diff --git a/gst/rtpmanager/rtpsource.c b/gst/rtpmanager/rtpsource.c
+index fb9e039..f1ee4ac 100644
+--- a/gst/rtpmanager/rtpsource.c
++++ b/gst/rtpmanager/rtpsource.c
+@@ -1345,6 +1345,9 @@ rtp_source_process_sr (RTPSource * src, GstClockTime time, guint64 ntptime,
+ 
+   /* make current */
+   src->stats.curr_sr = curridx;
++
++  src->stats.prev_rtcptime = src->stats.last_rtcptime;
++  src->stats.last_rtcptime = time;
+ }
+ 
+ /**

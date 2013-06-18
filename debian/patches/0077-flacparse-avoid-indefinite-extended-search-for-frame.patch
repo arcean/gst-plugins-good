@@ -1,0 +1,32 @@
+From 81ef217ab669bd84d4820b865703ac9b7968bb00 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Mon, 19 Mar 2012 11:58:15 +0100
+Subject: [PATCH] flacparse: avoid indefinite extended search for frame end if
+ possible
+
+... which is particularly useful if locked on to the wrong frame start
+and/or corrupt frame being crc checked.
+---
+ gst/audioparsers/gstflacparse.c |    9 +++++++++
+ 1 files changed, 9 insertions(+), 0 deletions(-)
+
+diff --git a/gst/audioparsers/gstflacparse.c b/gst/audioparsers/gstflacparse.c
+index 0249e88..0a62765 100644
+--- a/gst/audioparsers/gstflacparse.c
++++ b/gst/audioparsers/gstflacparse.c
+@@ -640,6 +640,15 @@ gst_flac_parse_frame_is_valid (GstFlacParse * flacparse,
+     }
+   }
+ 
++  /* so we searched to expected end and found nothing,
++   * give up on this frame (start) */
++  if (flacparse->max_framesize && i > 2 * flacparse->max_framesize) {
++    GST_LOG_OBJECT (flacparse,
++        "could not determine valid frame end, discarding frame (start)");
++    *ret = 1;
++    return FALSE;
++  }
++
+ need_more:
+   max = flacparse->max_framesize + 16;
+   if (max == 16)

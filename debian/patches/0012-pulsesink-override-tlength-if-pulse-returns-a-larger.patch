@@ -1,0 +1,41 @@
+From b31dd87174c882dc3f50da7f9a34c136463fc2ef Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Stadler?= <rene.stadler@nokia.com>
+Date: Tue, 24 May 2011 20:20:49 +0300
+Subject: [PATCH] pulsesink: override tlength if pulse returns a larger value
+
+This is a hack for Maemo PulseAudio. For sink.voice, it never allows
+to go under 200ms (and the actual value can vary between
+invocations). We are again in a similar situation as for Maemo5, only
+that this time pulsesrc is not affected as well.
+
+Bummer.
+---
+ ext/pulse/pulsesink.c |   15 +++++++++++++--
+ 1 files changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/ext/pulse/pulsesink.c b/ext/pulse/pulsesink.c
+index e4fe6e3..9fe46e3 100644
+--- a/ext/pulse/pulsesink.c
++++ b/ext/pulse/pulsesink.c
+@@ -893,8 +893,19 @@ gst_pulseringbuffer_acquire (GstRingBuffer * buf, GstRingBufferSpec * spec)
+   GST_INFO_OBJECT (psink, "minreq:    %d (wanted %d)", actual->minreq,
+       wanted.minreq);
+ 
+-  spec->segsize = actual->minreq;
+-  spec->segtotal = actual->tlength / spec->segsize;
++  {
++    guint32 actual_tlength = actual->tlength;
++
++    /* Work around a bug in Maemo pulseaudio, which returns an
++     * incorrect tlength for low values (VoIP call!): */
++    if (actual_tlength > wanted.tlength) {
++      GST_WARNING_OBJECT (psink, "pulse doesn't like our tlength, assuming Maemo PulseAudio is buggy");
++      actual_tlength = wanted.tlength;
++    }
++
++    spec->segsize = actual->minreq;
++    spec->segtotal = actual_tlength / spec->segsize;
++  }
+ 
+   pa_threaded_mainloop_unlock (mainloop);
+ 

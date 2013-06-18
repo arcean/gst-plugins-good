@@ -1,0 +1,39 @@
+From ed6a28e093194f6f351142af5923707fe10ae393 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Thu, 18 Aug 2011 14:12:21 +0200
+Subject: [PATCH] jitterbuffer: check some more for possible rtp timestamp discontinuity
+
+... when operating in non slave mode, and reset if detected.
+This should avoid some (large) bogus outgoing timestamp due to jumps
+in rtp time, as result of PAUSE/PLAY or seek or ...
+---
+ gst/rtpmanager/rtpjitterbuffer.c |   16 ++++++++++++++++
+ 1 files changed, 16 insertions(+), 0 deletions(-)
+
+diff --git a/gst/rtpmanager/rtpjitterbuffer.c b/gst/rtpmanager/rtpjitterbuffer.c
+index a5230ec..3393d95 100644
+--- a/gst/rtpmanager/rtpjitterbuffer.c
++++ b/gst/rtpmanager/rtpjitterbuffer.c
+@@ -634,6 +634,22 @@ rtp_jitter_buffer_insert (RTPJitterBuffer * jbuf, GstBuffer * buf,
+   }
+ 
+   rtptime = gst_rtp_buffer_get_timestamp (buf);
++  /* rtp time jumps are checked for during skew calculation, but bypassed
++   * in other mode, so mind those here and reset jb if needed */
++  if (jbuf->mode != RTP_JITTER_BUFFER_MODE_SLAVE &&
++      jbuf->base_time != -1 && jbuf->last_rtptime != -1) {
++    GstClockTime ext_rtptime = jbuf->ext_rtptime;
++
++    ext_rtptime = gst_rtp_buffer_ext_timestamp (&ext_rtptime, rtptime);
++    if (ext_rtptime > jbuf->last_rtptime + 3 * clock_rate ||
++        ext_rtptime + 3 * clock_rate < jbuf->last_rtptime) {
++      /* reset even if we don't have valid incoming time;
++       * still better than producing possibly very bogus output timestamp */
++      GST_WARNING ("rtp delta too big, reset skew");
++      rtp_jitter_buffer_reset_skew (jbuf);
++    }
++  }
++
+   switch (jbuf->mode) {
+     case RTP_JITTER_BUFFER_MODE_NONE:
+       if (jbuf->base_time != -1)

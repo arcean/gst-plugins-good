@@ -1,0 +1,56 @@
+From db939600b557430778183025aebc67b02821d6c3 Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Wed, 24 Aug 2011 14:37:52 +0200
+Subject: [PATCH] jitterbuffer/rtpbin: relax dropping rtcp packets
+
+... to at least having it trigger a/v synchronization, possibly without
+using provided values which are still not considered sane
+(as previously dropped).
+---
+ gst/rtpmanager/gstrtpbin.c          |   13 +++++++++++++
+ gst/rtpmanager/gstrtpjitterbuffer.c |    8 ++++++--
+ 2 files changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/gst/rtpmanager/gstrtpbin.c b/gst/rtpmanager/gstrtpbin.c
+index b3a03df..2617934 100644
+--- a/gst/rtpmanager/gstrtpbin.c
++++ b/gst/rtpmanager/gstrtpbin.c
+@@ -1052,6 +1052,19 @@ gst_rtp_bin_associate (GstRtpBin * bin, GstRtpBinStream * stream, guint8 len,
+         stream->ssrc, client, client->cname);
+   }
+ 
++  if (!GST_CLOCK_TIME_IS_VALID (last_extrtptime)) {
++    GST_DEBUG_OBJECT (bin, "invalidated sync data");
++    if (bin->rtcp_sync == GST_RTP_BIN_RTCP_SYNC_RTP) {
++      /* we don't need that data, so carry on,
++       * but make some values look saner */
++      last_extrtptime = base_rtptime;
++    } else {
++      /* nothing we can do with this data in this case */
++      GST_DEBUG_OBJECT (bin, "bailing out");
++      return;
++    }
++  }
++
+   /* Take the extended rtptime we found in the SR packet and map it to the
+    * local rtptime. The local rtp time is used to construct timestamps on the
+    * buffers so we will calculate what running_time corresponds to the RTP
+diff --git a/gst/rtpmanager/gstrtpjitterbuffer.c b/gst/rtpmanager/gstrtpjitterbuffer.c
+index 35f1961..b600c4a 100644
+--- a/gst/rtpmanager/gstrtpjitterbuffer.c
++++ b/gst/rtpmanager/gstrtpjitterbuffer.c
+@@ -2107,8 +2107,12 @@ gst_rtp_jitter_buffer_chain_rtcp (GstPad * pad, GstBuffer * buffer)
+         diff = ext_rtptime - last_rtptime;
+         /* if bigger than 1 second, we drop it */
+         if (diff > clock_rate) {
+-          GST_DEBUG_OBJECT (jitterbuffer, "dropping, too far ahead");
+-          drop = TRUE;
++          GST_DEBUG_OBJECT (jitterbuffer, "too far ahead");
++          /* should drop this, but some RTSP servers end up with bogus
++           * way too ahead RTCP packet when repeated PAUSE/PLAY,
++           * so still trigger rptbin sync but invalidate RTCP data
++           * (sync might use other methods) */
++          ext_rtptime = -1;
+         }
+         GST_DEBUG_OBJECT (jitterbuffer, "ext last %" G_GUINT64_FORMAT ", diff %"
+             G_GUINT64_FORMAT, last_rtptime, diff);

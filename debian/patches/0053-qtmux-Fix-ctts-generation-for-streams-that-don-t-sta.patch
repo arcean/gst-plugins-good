@@ -1,0 +1,131 @@
+From f56ae2289b4a0ea7550a70aeb54cce721f4d18d8 Mon Sep 17 00:00:00 2001
+From: Thiago Santos <thiago.sousa.santos@collabora.co.uk>
+Date: Fri, 9 Sep 2011 09:12:56 -0300
+Subject: [PATCH] qtmux: Fix ctts generation for streams that don't start at 0 timestamps
+
+Subtract the first timestamp of a stream from all input buffers to
+get 0-based timestamps for creating a sane ctts table. Without this
+patch the ctts could have larger values than needed, causing the
+playback to have a delay at startup.
+
+As the first timestamp is only found after a few buffers are queued
+(due to possible reordered buffers), once we find the first timestamp
+we subtract it from all buffers on the queue, from that point on,
+all buffers have their timestamps subtract when they are collected.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=658659
+---
+ gst/isomp4/gstqtmux.c |   79 ++++++++++++++++++++++++++++++++++++++++---------
+ 1 files changed, 65 insertions(+), 14 deletions(-)
+
+diff --git a/gst/isomp4/gstqtmux.c b/gst/isomp4/gstqtmux.c
+index fac0738..06b5bf6 100644
+--- a/gst/isomp4/gstqtmux.c
++++ b/gst/isomp4/gstqtmux.c
+@@ -2021,6 +2021,39 @@ gst_qt_mux_push_ts (GstQTMux * qtmux, GstQTPad * pad, GstClockTime ts)
+   pad->ts_n_entries++;
+ }
+ 
++static void
++check_and_subtract_ts (GstQTMux * qtmux, GstClockTime * ts_a, GstClockTime ts_b)
++{
++  if (G_LIKELY (GST_CLOCK_TIME_IS_VALID (*ts_a))) {
++    if (G_LIKELY (*ts_a > ts_b)) {
++      *ts_a -= ts_b;
++    } else {
++      *ts_a = 0;
++      GST_WARNING_OBJECT (qtmux, "Subtraction would result in negative value, "
++          "using 0 as result");
++    }
++  }
++}
++
++/* subtract ts from all buffers enqueued on the pad */
++static void
++gst_qt_mux_subtract_ts (GstQTMux * qtmux, GstQTPad * pad, GstClockTime ts)
++{
++  gint i;
++
++  for (i = 0; (i < QTMUX_NO_OF_TS) && (i < pad->ts_n_entries); i++) {
++    check_and_subtract_ts (qtmux, &pad->ts_entries[i], ts);
++  }
++  for (i = 0; i < G_N_ELEMENTS (pad->buf_entries); i++) {
++    if (pad->buf_entries[i]) {
++      check_and_subtract_ts (qtmux, &GST_BUFFER_TIMESTAMP (pad->buf_entries[i]),
++          ts);
++      check_and_subtract_ts (qtmux,
++          &GST_BUFFER_OFFSET_END (pad->buf_entries[i]), ts);
++    }
++  }
++}
++
+ /* takes ownership of @buf */
+ static GstBuffer *
+ gst_qt_mux_get_asc_buffer_ts (GstQTMux * qtmux, GstQTPad * pad, GstBuffer * buf)
+@@ -2077,6 +2110,13 @@ gst_qt_mux_add_buffer (GstQTMux * qtmux, GstQTPad * pad, GstBuffer * buf)
+     buf = pad->prepare_buf_func (pad, buf, qtmux);
+   }
+ 
++  if (G_LIKELY (buf != NULL && GST_CLOCK_TIME_IS_VALID (pad->first_ts))) {
++    buf = gst_buffer_make_metadata_writable (buf);
++    check_and_subtract_ts (qtmux, &GST_BUFFER_TIMESTAMP (buf), pad->first_ts);
++  }
++  /* when we obtain the first_ts we subtract from all stored buffers we have,
++   * after that we can subtract on input */
++
+ again:
+   last_buf = pad->last_buf;
+   if (G_UNLIKELY (qtmux->dts_method == DTS_METHOD_REORDER)) {
+@@ -2150,6 +2190,31 @@ again:
+     goto no_order;
+   }
+ 
++  /* if this is the first buffer, store the timestamp */
++  if (G_UNLIKELY (pad->first_ts == GST_CLOCK_TIME_NONE) && last_buf) {
++    if (GST_CLOCK_TIME_IS_VALID (GST_BUFFER_TIMESTAMP (last_buf))) {
++      pad->first_ts = GST_BUFFER_TIMESTAMP (last_buf);
++    } else {
++      GST_DEBUG_OBJECT (qtmux, "First buffer for pad %s has no timestamp, "
++          "using 0 as first timestamp", GST_PAD_NAME (pad->collect.pad));
++      pad->first_ts = 0;
++    }
++    GST_DEBUG_OBJECT (qtmux, "Stored first timestamp for pad %s %"
++        GST_TIME_FORMAT, GST_PAD_NAME (pad->collect.pad),
++        GST_TIME_ARGS (pad->first_ts));
++
++    gst_qt_mux_subtract_ts (qtmux, pad, pad->first_ts);
++
++    GST_BUFFER_TIMESTAMP (last_buf) = 0;
++    check_and_subtract_ts (qtmux, &GST_BUFFER_OFFSET_END (last_buf),
++        pad->first_ts);
++    if (buf) {
++      check_and_subtract_ts (qtmux, &GST_BUFFER_TIMESTAMP (buf), pad->first_ts);
++      check_and_subtract_ts (qtmux, &GST_BUFFER_OFFSET_END (buf),
++          pad->first_ts);
++    }
++  }
++
+   /* fall back to duration if last buffer or
+    * out-of-order (determined previously), otherwise use input ts */
+   if (buf == NULL ||
+@@ -2309,20 +2374,6 @@ again:
+     qtmux->longest_chunk = duration;
+   }
+ 
+-  /* if this is the first buffer, store the timestamp */
+-  if (G_UNLIKELY (pad->first_ts == GST_CLOCK_TIME_NONE) && last_buf) {
+-    if (GST_CLOCK_TIME_IS_VALID (GST_BUFFER_TIMESTAMP (last_buf))) {
+-      pad->first_ts = GST_BUFFER_TIMESTAMP (last_buf);
+-    } else {
+-      GST_DEBUG_OBJECT (qtmux, "First buffer for pad %s has no timestamp, "
+-          "using 0 as first timestamp", GST_PAD_NAME (pad->collect.pad));
+-      pad->first_ts = 0;
+-    }
+-    GST_DEBUG_OBJECT (qtmux, "Stored first timestamp for pad %s %"
+-        GST_TIME_FORMAT, GST_PAD_NAME (pad->collect.pad),
+-        GST_TIME_ARGS (pad->first_ts));
+-  }
+-
+   /* now we go and register this buffer/sample all over */
+   /* note that a new chunk is started each time (not fancy but works) */
+   if (qtmux->moov_recov_file) {

@@ -1,0 +1,57 @@
+From d224d48b76ef91f5fe6039e40cd072b8b0370984 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Stadler?= <rene.stadler@nokia.com>
+Date: Fri, 3 Dec 2010 13:51:47 +0200
+Subject: [PATCH] qtdemux: rename to notqtdemux, decrease rank
+
+---
+ gst/isomp4/isomp4-plugin.c |    4 ++--
+ gst/isomp4/qtdemux.c       |   11 +++++++----
+ 2 files changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/gst/isomp4/isomp4-plugin.c b/gst/isomp4/isomp4-plugin.c
+index 1e26d30..12da875 100644
+--- a/gst/isomp4/isomp4-plugin.c
++++ b/gst/isomp4/isomp4-plugin.c
+@@ -51,8 +51,8 @@ plugin_init (GstPlugin * plugin)
+       G_TYPE_STRING, GST_QT_DEMUX_CLASSIFICATION_TAG, "content classification",
+       gst_tag_merge_use_first);
+ 
+-  if (!gst_element_register (plugin, "qtdemux",
+-          GST_RANK_PRIMARY, GST_TYPE_QTDEMUX))
++  if (!gst_element_register (plugin, "notqtdemux",
++          GST_RANK_PRIMARY - 1, GST_TYPE_QTDEMUX))
+     return FALSE;
+ 
+   if (!gst_element_register (plugin, "rtpxqtdepay",
+diff --git a/gst/isomp4/qtdemux.c b/gst/isomp4/qtdemux.c
+index 52a0746..12893d1 100644
+--- a/gst/isomp4/qtdemux.c
++++ b/gst/isomp4/qtdemux.c
+@@ -383,7 +383,10 @@ GST_STATIC_PAD_TEMPLATE ("subtitle_%02d",
+     GST_PAD_SOMETIMES,
+     GST_STATIC_CAPS_ANY);
+ 
+-GST_BOILERPLATE (GstQTDemux, gst_qtdemux, GstQTDemux, GST_TYPE_ELEMENT);
++typedef struct _GstQTDemux GstNotQTDemux;
++typedef struct _GstQTDemuxClass GstNotQTDemuxClass;
++
++GST_BOILERPLATE (GstNotQTDemux, gst_qtdemux, GstQTDemux, GST_TYPE_ELEMENT);
+ 
+ static void gst_qtdemux_dispose (GObject * object);
+ 
+@@ -441,12 +444,12 @@ gst_qtdemux_base_init (gpointer klass)
+       gst_static_pad_template_get (&gst_qtdemux_audiosrc_template));
+   gst_element_class_add_pad_template (element_class,
+       gst_static_pad_template_get (&gst_qtdemux_subsrc_template));
+-  gst_element_class_set_details_simple (element_class, "QuickTime demuxer",
++  gst_element_class_set_details_simple (element_class, "MPEG-4 ISO/3GPP demuxer",
+       "Codec/Demuxer",
+-      "Demultiplex a QuickTime file into audio and video streams",
++      "Demultiplex a MPEG-4 ISO/3GPP files into audio and video streams",
+       "David Schleef <ds@schleef.org>, Wim Taymans <wim@fluendo.com>");
+ 
+-  GST_DEBUG_CATEGORY_INIT (qtdemux_debug, "qtdemux", 0, "qtdemux plugin");
++  GST_DEBUG_CATEGORY_INIT (qtdemux_debug, "notqtdemux", 0, "notqtdemux plugin");
+ }
+ 
+ static void

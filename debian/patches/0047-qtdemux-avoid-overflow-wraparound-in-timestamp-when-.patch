@@ -1,0 +1,46 @@
+From 1382f6e8642f49ca7b343fc73152f073f72b861f Mon Sep 17 00:00:00 2001
+From: Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>
+Date: Mon, 29 Aug 2011 15:13:56 +0200
+Subject: [PATCH] qtdemux: avoid overflow wraparound in timestamp when adding durations
+
+Do some type juggling to avoid overflow, while still allowing for 'negative'
+durations (which would need a wraparound effect).
+---
+ gst/isomp4/qtdemux.c |   10 ++++++----
+ 1 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/gst/isomp4/qtdemux.c b/gst/isomp4/qtdemux.c
+index b9623fe..d9db01e 100644
+--- a/gst/isomp4/qtdemux.c
++++ b/gst/isomp4/qtdemux.c
+@@ -318,7 +318,7 @@ struct _QtDemuxStream
+   guint32 stts_samples;
+   guint32 n_sample_times;
+   guint32 stts_sample_index;
+-  guint32 stts_time;
++  guint64 stts_time;
+   guint32 stts_duration;
+   /* stss */
+   gboolean stss_present;
+@@ -5715,8 +5715,8 @@ done2:
+ 
+     for (i = stream->stts_index; i < n_sample_times; i++) {
+       guint32 stts_samples;
+-      guint32 stts_duration;
+-      guint32 stts_time;
++      gint32 stts_duration;
++      gint64 stts_time;
+ 
+       if (stream->stts_sample_index >= stream->stts_samples
+           || !stream->stts_sample_index) {
+@@ -5746,7 +5746,9 @@ done2:
+         cur->timestamp = stts_time;
+         cur->duration = stts_duration;
+ 
+-        stts_time += stts_duration;
++        /* avoid 32-bit wrap-around,
++         * but still mind possible 'negative' duration */
++        stts_time += (gint64) stts_duration;
+         cur++;
+ 
+         if (G_UNLIKELY (cur > last)) {

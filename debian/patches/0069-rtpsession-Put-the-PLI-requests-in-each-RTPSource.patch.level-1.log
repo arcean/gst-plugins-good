@@ -1,0 +1,4 @@
+patching file gst/rtpmanager/gstrtpsession.c
+patching file gst/rtpmanager/rtpsession.c
+patching file gst/rtpmanager/rtpsession.h
+patching file gst/rtpmanager/rtpsource.h

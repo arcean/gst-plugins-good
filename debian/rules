@@ -1,0 +1,192 @@
+#!/usr/bin/make -f
+
+-include /usr/share/cdbs/1/rules/debhelper.mk
+-include /usr/share/cdbs/1/rules/simple-patchsys.mk
+-include /usr/share/cdbs/1/class/gnome.mk
+-include /usr/share/cdbs/1/rules/utils.mk
+
+LDFLAGS += -Wl,-O1 -Wl,--as-needed
+
+CFLAGS += -Wno-error
+
+ifneq (,$(filter noopt,$(DEB_BUILD_OPTIONS)))
+    CFLAGS += -O0
+else
+    CFLAGS += -O2
+endif
+
+ifeq (,$(findstring debug,$(DEB_BUILD_OPTIONS)))
+    CFLAGS += -DG_DISABLE_CAST_CHECKS -DGST_DISABLE_GST_DEBUG=1
+    DEB_CONFIGURE_EXTRA_FLAGS += --enable-glib-asserts=yes
+else
+    DEB_CONFIGURE_EXTRA_FLAGS += --enable-glib-asserts=no
+endif
+
+ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+    NUMJOBS = $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+    MAKEFLAGS += -j$(NUMJOBS)
+endif
+
+ifneq (,$(findstring nodocs,$(DEB_BUILD_OPTIONS)))
+    DEB_CONFIGURE_EXTRA_FLAGS += --disable-gtk-doc --disable-docbook
+    common-install-indep::
+	mkdir -p debian/tmp/usr/share/gtk-doc
+else
+    DEB_CONFIGURE_EXTRA_FLAGS += --enable-gtk-doc --enable-docbook
+endif
+
+# Replace gst-plugins-bad qtmux plugin:
+common-install-indep::
+	mkdir -p debian/tmp/usr/lib/gstreamer-0.10
+	touch debian/tmp/usr/lib/gstreamer-0.10/libgstqtmux.so
+
+# debian package version
+version=$(shell dpkg-parsechangelog | grep ^Version: | cut -d ' ' -f 2)
+# upstream version
+gst_version=$(shell echo $(version) | cut -d '-' -f 1)
+gst_major=0
+gst_minor=10
+gst_abi=$(gst_major).$(gst_minor)
+# gstreamer library package names
+gst_lib=libgstreamer$(gst_abi)-0
+gst_lib_dev=libgstreamer$(gst_abi)-dev
+# what gstreamer version is needed
+gst_lib_dev_dep=$(gst_lib_dev) (>= 0.10.21)
+
+gst_pkgname=gstreamer$(gst_abi)
+gst_deb_abi=$(gst_abi)-0
+
+# debug package
+DEB_DH_STRIP_ARGS += --dbg-package=$(gst_pkgname)-plugins-good-dbg
+
+# The plugins are basically the same.
+# Link special names to a template file.
+# still need "*.install" to be done by hand
+
+PLUGINS += plugins-good plugins-good-extra plugins-good-extra-formats
+ifeq ($(DEB_HOST_ARCH_OS),linux)
+PLUGINS +=
+endif
+VERSIONIZE= \
+	plugins-good-doc.install \
+	plugins-good-extra-formats.postinst \
+	plugins-good-extra-formats.postrm
+
+ifeq ($(DEB_HOST_ARCH_OS),linux)
+DEFAULT_AUDIOSINK = autoaudiosink
+DEFAULT_AUDIOSRC = alsasrc
+DEFAULT_VIDEOSINK = autovideosink
+DEFAULT_VIDEOSRC = v4l2src
+DEFAULT_VISUALIZER = goom
+else
+DEFAULT_AUDIOSINK = autoaudiosink
+DEFAULT_AUDIOSRC = osssrc
+DEFAULT_VIDEOSINK = autovideosink
+DEFAULT_VIDEOSRC = videotestsrc
+DEFAULT_VISUALIZER = goom
+endif
+
+# Let's decide the package name and url depending on the distribution
+DISTRO = "$(shell lsb_release -si)"
+
+GST_PACKAGE_NAME := "GStreamer Good Plugins (unknown Debian derivative)"
+GST_PACKAGE_ORIGIN="http://packages.qa.debian.org/gst-plugins-good$(gst_abi)"
+
+ifeq ($(DISTRO),"Debian")
+GST_PACKAGE_NAME := "GStreamer Good Plugins (Debian)"
+GST_PACKAGE_ORIGIN="http://packages.qa.debian.org/gst-plugins-good$(gst_abi)"
+endif
+
+ifeq ($(DISTRO),"Ubuntu")
+GST_PACKAGE_NAME := "GStreamer Good Plugins (Ubuntu)"
+GST_PACKAGE_ORIGIN="https://launchpad.net/distros/ubuntu/+source/gst-plugins-good$(gst_abi)"
+endif
+
+
+# setup links for packages
+pre-build::
+	for p in $(PLUGINS); do \
+		rm -f debian/$(gst_pkgname)-$$p.install; \
+		cat debian/gstreamer-$$p.install | \
+			sed 's/@GST_ABI@/$(gst_abi)/g' \
+			> debian/$(gst_pkgname)-$$p.install; \
+	done
+
+	for f in $(VERSIONIZE); do \
+		cat debian/gstreamer-$$f | \
+			sed 's/@GST_ABI@/$(gst_abi)/g' \
+			> debian/$(gst_pkgname)-$$f; \
+	done
+
+maint: debian/control
+
+debian/stamp-autogen:
+	./autogen.sh --noconfigure
+	touch $@
+
+post-patches:: debian/stamp-autogen
+
+debian/control:: debian/control.in debian/rules
+	cat debian/control.in | \
+		sed 's/@GST_VERSION@/$(gst_version)/g' | \
+		sed 's/@GST_ABI@/$(gst_abi)/g' | \
+		sed 's/@GST_PKGNAME@/$(gst_pkgname)/g' | \
+		sed 's/@GST_LIB@/$(gst_lib)/g' > $@
+
+DEB_CONFIGURE_EXTRA_FLAGS += \
+	--disable-examples \
+	--enable-DEBUG \
+	--enable-debug \
+	--disable-nls \
+	--with-package-name=$(GST_PACKAGE_NAME) \
+	--with-package-origin=$(GST_PACKAGE_ORIGIN) \
+	--enable-experimental
+
+clean::
+	# get rid of the sym links
+	for i in $(PLUGINS); do \
+		rm -f debian/$(gst_pkgname)-$$i.install; \
+		rm -f debian/$(gst_pkgname)-$$i.preinst; \
+	done
+	for f in $(VERSIONIZE); do \
+		rm -f debian/$(gst_pkgname)-$$f; \
+	done
+
+common-binary-fixup-arch::
+	dh_gstscancodecs
+
+DEB_INSTALL_DOCS_ALL += debian/README.Debian NEWS
+
+# Disable inclusion of large upstream ChangeLog
+DEB_INSTALL_CHANGELOGS_ALL :=
+
+UPSTREAM_REF=master
+PATCHES_REF=maemo-patches
+
+update-patch-series:
+	mkdir -p $(CURDIR)/debian/patches
+	rm -f $(CURDIR)/debian/patches/*.patch
+	git format-patch -N -o $(CURDIR)/debian/patches $(PATCHES_REF) ^$(UPSTREAM_REF) | \
+		xargs -n 1 basename > $(CURDIR)/debian/patches/series
+	for patch in $$(ls $(CURDIR)/debian/patches/*.patch) ; \
+	do \
+		lines=$$(cat $$patch | wc -l) ; \
+		head -n $$(($$lines - 3)) $$patch > $${patch}.chomped ; \
+		mv $${patch}.chomped $$patch ; \
+	done
+
+update-common: COMMIT := $(shell git rev-parse $(shell git rev-parse --verify MERGE_HEAD || git merge-base $(UPSTREAM_REF) HEAD):common)
+update-common:
+	@if ! git diff-files --ignore-submodules --quiet common || \
+		! git diff-index --ignore-submodules --cached --quiet HEAD -- common; then \
+			echo "your common/ directory state is dirty"; \
+			exit 1; \
+		fi
+	if test -d $(CURDIR)/common ; then rm -rfv $(CURDIR)/common ; git rm -r --cached --ignore-unmatch $(CURDIR)/common ; fi
+	git clone -n git://anongit.freedesktop.org/gstreamer/common $(CURDIR)/common
+	cd $(CURDIR)/common && git checkout -f $(COMMIT)
+	rm -rfv $(CURDIR)/common/.git
+	git add $(CURDIR)/common
+	@echo "common update to $(COMMIT) staged, git commit to proceed"
+
+.PHONY: maint

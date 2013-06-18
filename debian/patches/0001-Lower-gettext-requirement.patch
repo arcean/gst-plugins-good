@@ -1,0 +1,36 @@
+From d56cdd652d5472ceff93ba8363ac429d85746462 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ren=C3=A9=20Stadler?= <rene.stadler@nokia.com>
+Date: Wed, 11 Mar 2009 13:30:40 +0200
+Subject: [PATCH] Lower gettext requirement.
+
+---
+ autogen.sh   |    2 +-
+ configure.ac |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/autogen.sh b/autogen.sh
+index 1fcf9f2..a49317f 100755
+--- a/autogen.sh
++++ b/autogen.sh
+@@ -41,7 +41,7 @@ version_check "autoconf" "$AUTOCONF autoconf autoconf270 autoconf269 autoconf268
+ version_check "automake" "$AUTOMAKE automake automake-1.11 automake-1.10" \
+               "ftp://ftp.gnu.org/pub/gnu/automake/" 1 10 || DIE=1
+ version_check "autopoint" "autopoint" \
+-              "ftp://ftp.gnu.org/pub/gnu/gettext/" 0 17 || DIE=1
++              "ftp://ftp.gnu.org/pub/gnu/gettext/" 0 13 || DIE=1
+ version_check "libtoolize" "$LIBTOOLIZE libtoolize glibtoolize" \
+               "ftp://ftp.gnu.org/pub/gnu/libtool/" 1 5 0 || DIE=1
+ version_check "pkg-config" "" \
+diff --git a/configure.ac b/configure.ac
+index 5435001..bf88603 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -67,7 +67,7 @@ AC_SUBST(ACLOCAL_AMFLAGS, "-I m4 -I common/m4")
+ 
+ dnl set up gettext
+ dnl the version check needs to stay here because autopoint greps for it
+-AM_GNU_GETTEXT_VERSION([0.17])
++AM_GNU_GETTEXT_VERSION([0.13])
+ AM_GNU_GETTEXT([external])
+ AG_GST_GETTEXT([gst-plugins-good-$GST_MAJORMINOR])
+ 

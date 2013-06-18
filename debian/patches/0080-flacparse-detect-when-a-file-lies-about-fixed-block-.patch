@@ -1,0 +1,59 @@
+From 895c2c08f7fd1773e8df3f259744b6f95899364e Mon Sep 17 00:00:00 2001
+From: Vincent Penquerc'h <vincent.penquerch@collabora.co.uk>
+Date: Mon, 14 Nov 2011 15:34:57 +0000
+Subject: [PATCH] flacparse: detect when a file lies about fixed block size
+
+If the sample/block number happens to be the same as the block
+size, we assume variable block size, and thus counters in samples
+in the headers. This can only get us a false positive for a block
+size of 1, which is invalid. We can get false negatives more
+often though (eg, if not starting at the start of the stream),
+but then that's already GIGO.
+---
+ gst/audioparsers/gstflacparse.c |   12 ++++++++++++
+ gst/audioparsers/gstflacparse.h |    2 ++
+ 2 files changed, 14 insertions(+), 0 deletions(-)
+
+diff --git a/gst/audioparsers/gstflacparse.c b/gst/audioparsers/gstflacparse.c
+index 58760e3..78f5cf8 100644
+--- a/gst/audioparsers/gstflacparse.c
++++ b/gst/audioparsers/gstflacparse.c
+@@ -395,6 +395,8 @@ gst_flac_parse_frame_header_is_valid (GstFlacParse * flacparse,
+ 
+   /* 0 == fixed block size, 1 == variable block size */
+   blocking_strategy = gst_bit_reader_get_bits_uint8_unchecked (&reader, 1);
++  if (flacparse->force_variable_block_size)
++    blocking_strategy = 1;
+ 
+   /* block size index, calculation of the real blocksize below */
+   block_size = gst_bit_reader_get_bits_uint16_unchecked (&reader, 4);
+@@ -528,6 +530,16 @@ gst_flac_parse_frame_header_is_valid (GstFlacParse * flacparse,
+   if (actual_crc != expected_crc)
+     goto error;
+ 
++  /* Sanity check sample number against blocking strategy, as it seems
++     some files claim fixed block size but supply sample numbers,
++     rather than block numbers. */
++  if (set && blocking_strategy == 0 && block_size == sample_number) {
++    GST_WARNING_OBJECT (flacparse, "This file claims fixed block size, "
++        "but seems to be lying: assuming variable block size");
++    flacparse->force_variable_block_size = TRUE;
++    blocking_strategy = 1;
++  }
++
+   /* 
+      The FLAC format documentation says:
+      The "blocking strategy" bit determines how to calculate the sample number
+diff --git a/gst/audioparsers/gstflacparse.h b/gst/audioparsers/gstflacparse.h
+index 1c6db0e..2827552 100644
+--- a/gst/audioparsers/gstflacparse.h
++++ b/gst/audioparsers/gstflacparse.h
+@@ -79,6 +79,8 @@ struct _GstFlacParse {
+ 
+   GList *headers;
+   GstBuffer *seektable;
++
++  gboolean force_variable_block_size;
+ };
+ 
+ struct _GstFlacParseClass {

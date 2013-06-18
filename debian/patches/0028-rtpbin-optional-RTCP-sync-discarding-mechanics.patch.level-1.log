@@ -1,0 +1,2 @@
+patching file gst/rtpmanager/gstrtpbin.c
+patching file gst/rtpmanager/gstrtpbin.h

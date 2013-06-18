@@ -1,0 +1,151 @@
+From 581c739d06c30ed7716c4c14bc9f5c14433f713f Mon Sep 17 00:00:00 2001
+From: Thiago Santos <thiago.sousa.santos@collabora.co.uk>
+Date: Wed, 28 Sep 2011 11:41:49 -0300
+Subject: [PATCH] qtmux: Calculate average bitrate for streams
+
+Calculate and use average bitrate for streams when no
+bitrate tag was received
+---
+ gst/isomp4/atoms.c    |   50 +++++++++++++++++++++++++++++++++++++++++++++++++
+ gst/isomp4/atoms.h    |    3 ++
+ gst/isomp4/gstqtmux.c |   22 +++++++++++++++++++++
+ gst/isomp4/gstqtmux.h |    4 +++
+ 4 files changed, 79 insertions(+), 0 deletions(-)
+
+diff --git a/gst/isomp4/atoms.c b/gst/isomp4/atoms.c
+index 5aebd6b..9aca106 100644
+--- a/gst/isomp4/atoms.c
++++ b/gst/isomp4/atoms.c
+@@ -2742,6 +2742,56 @@ atom_moov_chunks_add_offset (AtomMOOV * moov, guint32 offset)
+   }
+ }
+ 
++void
++atom_trak_update_bitrates (AtomTRAK * trak, guint32 avg_bitrate,
++    guint32 max_bitrate)
++{
++  AtomESDS *esds = NULL;
++  AtomSTSD *stsd;
++  GList *iter;
++  GList *extensioniter = NULL;
++
++  g_return_if_fail (trak != NULL);
++
++  if (avg_bitrate == 0 && max_bitrate == 0)
++    return;
++
++  stsd = &trak->mdia.minf.stbl.stsd;
++  for (iter = stsd->entries; iter; iter = g_list_next (iter)) {
++    SampleTableEntry *entry = iter->data;
++
++    switch (entry->kind) {
++      case AUDIO:{
++        SampleTableEntryMP4A *audioentry = (SampleTableEntryMP4A *) entry;
++        extensioniter = audioentry->extension_atoms;
++        break;
++      }
++      case VIDEO:{
++        SampleTableEntryMP4V *videoentry = (SampleTableEntryMP4V *) entry;
++        extensioniter = videoentry->extension_atoms;
++        break;
++      }
++      default:
++        break;
++    }
++  }
++
++  for (; extensioniter; extensioniter = g_list_next (extensioniter)) {
++    AtomInfo *atominfo = extensioniter->data;
++    if (atominfo->atom->type == FOURCC_esds) {
++      esds = (AtomESDS *) atominfo->atom;
++      break;
++    }
++  }
++
++  if (esds) {
++    if (avg_bitrate && esds->es.dec_conf_desc.avg_bitrate == 0)
++      esds->es.dec_conf_desc.avg_bitrate = avg_bitrate;
++    if (max_bitrate && esds->es.dec_conf_desc.max_bitrate == 0)
++      esds->es.dec_conf_desc.max_bitrate = max_bitrate;
++  }
++}
++
+ /*
+  * Meta tags functions
+  */
+diff --git a/gst/isomp4/atoms.h b/gst/isomp4/atoms.h
+index 5aeb5f8..20ea141 100644
+--- a/gst/isomp4/atoms.h
++++ b/gst/isomp4/atoms.h
+@@ -906,6 +906,9 @@ void atom_trak_set_video_type (AtomTRAK * trak, AtomsContext * context,
+                                VisualSampleEntry * entry, guint32 rate,
+                                GList * ext_atoms_list);
+ 
++void atom_trak_update_bitrates (AtomTRAK * trak, guint32 avg_bitrate,
++                                guint32 max_bitrate);
++
+ AtomInfo *   build_codec_data_extension  (guint32 fourcc, const GstBuffer * codec_data);
+ AtomInfo *   build_mov_aac_extension     (AtomTRAK * trak, const GstBuffer * codec_data,
+                                           guint32 avg_bitrate, guint32 max_bitrate);
+diff --git a/gst/isomp4/gstqtmux.c b/gst/isomp4/gstqtmux.c
+index be31357..bc048cf 100644
+--- a/gst/isomp4/gstqtmux.c
++++ b/gst/isomp4/gstqtmux.c
+@@ -367,6 +367,8 @@ gst_qt_mux_pad_reset (GstQTPad * qtpad)
+   qtpad->avg_bitrate = 0;
+   qtpad->max_bitrate = 0;
+   qtpad->ts_n_entries = 0;
++  qtpad->total_duration = 0;
++  qtpad->total_bytes = 0;
+ 
+   qtpad->buf_head = 0;
+   qtpad->buf_tail = 0;
+@@ -1761,6 +1763,20 @@ gst_qt_mux_stop_file (GstQTMux * qtmux)
+             qtpad->last_dts > first_ts)) {
+       first_ts = qtpad->last_dts;
+     }
++
++    /* update average bitrate of streams if needed */
++    {
++      guint32 avgbitrate = 0;
++      guint32 maxbitrate = qtpad->max_bitrate;
++
++      if (qtpad->avg_bitrate)
++        avgbitrate = qtpad->avg_bitrate;
++      else if (qtpad->total_duration > 0)
++        avgbitrate = (guint32) gst_util_uint64_scale_round (qtpad->total_bytes,
++            8 * GST_SECOND, qtpad->total_duration);
++
++      atom_trak_update_bitrates (qtpad->trak, avgbitrate, maxbitrate);
++    }
+   }
+ 
+   if (qtmux->fragment_sequence) {
+@@ -2283,6 +2299,12 @@ again:
+     duration = MAX (duration, ts);
+   }
+ 
++  /* for computing the avg bitrate */
++  if (G_LIKELY (last_buf)) {
++    pad->total_bytes += GST_BUFFER_SIZE (last_buf);
++    pad->total_duration += duration;
++  }
++
+   gst_buffer_replace (&pad->last_buf, buf);
+ 
+   last_dts = gst_util_uint64_scale_round (pad->last_dts,
+diff --git a/gst/isomp4/gstqtmux.h b/gst/isomp4/gstqtmux.h
+index 3a2cb49..1851973 100644
+--- a/gst/isomp4/gstqtmux.h
++++ b/gst/isomp4/gstqtmux.h
+@@ -97,6 +97,10 @@ struct _GstQTPad
+   /* bitrates */
+   guint32 avg_bitrate, max_bitrate;
+ 
++  /* for avg bitrate calculation */
++  guint64 total_bytes;
++  guint64 total_duration;
++
+   GstBuffer *last_buf;
+   /* dts of last_buf */
+   GstClockTime last_dts;
